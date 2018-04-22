@@ -11,6 +11,7 @@ using Sandbox.ModAPI.Ingame;
 using Sandbox.Definitions;
 using Sandbox.Game.Multiplayer;
 using Sandbox.ModAPI.Interfaces;
+using VRage;
 using VRage.Game;
 using VRage.Game.ModAPI.Ingame;
 using VRage.Library.Collections;
@@ -18,7 +19,7 @@ using IMyGridTerminalSystem = Sandbox.ModAPI.IMyGridTerminalSystem;
 
 namespace PartWatcher_alpha
 {
-    public class Program
+    public class Programcode
     {
         #region DONT COPY
 
@@ -35,41 +36,29 @@ namespace PartWatcher_alpha
 
         private const string LCD_DISPLAY_NAME = "c_display";
         private const string CONTAINER_NAME = "c_container";
-
+           
         //called every millisecond or so
         public void Main()
         {
             //get lcd first
             var container = new Container(GridTerminalSystem,CONTAINER_NAME);
             var assembler = new Assembler(GridTerminalSystem,"c_assembler");
-            Echo(container.GetItemCount(Item.ITEM.STEEL_PLATE,false).ToString());
+            Echo(container.GetItemCount(Item.ITEM.STEEL_PLATE).ToString());
             var lcd = (IMyTextPanel) GridTerminalSystem.GetBlockWithName(LCD_DISPLAY_NAME);
-            //item quota
-            var quota = new Dictionary<Item.ITEM, int> {{Item.ITEM.STEEL_PLATE, 50}};
+            //itemType quota
+            var quotaTable = new Dictionary<Item.ITEM, int> {{Item.ITEM.STEEL_PLATE, 50}};
 
-            foreach (var quotaEntry in quota)
+            foreach (var quota in quotaTable)
             {
-                var itemCount = container.GetItemCount(quotaEntry.Key,true);
-                itemCount = assembler.GetOutputInventory().Count;
-                lcd.WritePublicText(itemCount.ToString());
-                return;
-                var assemblerItems = assembler.GetOutputInventory();
-                foreach (var item in assemblerItems)
-                {
-                    if (item.itemType == quotaEntry.Key)
-                    {
-                        itemCount += item.amount;
-                    }
-                }
-                if (quotaEntry.Value > itemCount)
-                {
-                    assembler.EnqueueItem(quotaEntry.Key,quotaEntry.Value-itemCount);
-                }
+                var existingItemCount = container.GetItemCount(quota.Key);
+                var toEnqueue = quota.Value - existingItemCount;
+                lcd.WritePublicText("Enqueing " + toEnqueue + " items");
+                assembler.EnqueueToSatisfyQuota(quota.Key,toEnqueue);
             }
         }
 
         //called only once. can be used to init
-        public Program()
+        public Programcode()
         {
 
         }
@@ -197,7 +186,7 @@ namespace PartWatcher_alpha
             public Item(IMyInventoryItem rawItem)
             {
                 _rawItem = rawItem;
-                itemType = convertItemObjToItem(_rawItem);
+                itemType = ConvertItemObjToItem(_rawItem);
             }
 
             public ITEM itemType;
@@ -207,7 +196,7 @@ namespace PartWatcher_alpha
             private IMyInventoryItem _rawItem;
 
             //function shamelessly stolen from http://thefinalfrontier.se/cargo-container-inventory/
-            static string decodeItemName(IMyInventoryItem item)
+            public static string DecodeItemName(IMyInventoryItem item)
             {
 
                 var name = item.Content.SubtypeName;
@@ -346,10 +335,14 @@ namespace PartWatcher_alpha
                 return name;
             }
 
-            static ITEM convertItemObjToItem(IMyInventoryItem item)
+            public static ITEM ConvertItemObjToItem(IMyInventoryItem item)
             {
-                var name = item.Content.SubtypeName;
-                var typeId = item.Content.TypeId.ToString();
+                return ConvertSubTypeAndTypeIdToItem(item.Content.SubtypeName, item.Content.SubtypeId.ToString());
+            }
+
+            public static ITEM ConvertSubTypeAndTypeIdToItem(string subTypeString, string typeId)
+            {
+                var name = subTypeString;
 
                 if (name.Equals("Construction")) { return ITEM.CONTRUCTION_COMPONENT; }
                 if (name.Equals("MetalGrid")) { return ITEM.METALGRID; }
@@ -364,16 +357,16 @@ namespace PartWatcher_alpha
 
                 if (typeId.EndsWith("_Ore"))
                 {
-                    if (name.Equals("Stone")){return ITEM.STONE;}
-                    if (name.Equals("Iron")){return ITEM.IRON_ORE;}
-                    if (name.Equals("Nickel")){return ITEM.NICKEL_ORE;}
-                    if (name.Equals("Cobalt")){return ITEM.COBALT_ORE;}
-                    if (name.Equals("Magnesium")){return ITEM.MAGNESIUM_ORE;}
-                    if (name.Equals("Silicon")){return ITEM.SILICON_ORE;}
-                    if (name.Equals("Silver")){return ITEM.SILVER_ORE;}
-                    if (name.Equals("Gold")){return ITEM.GOLD_ORE;}
-                    if (name.Equals("Platinum")){return ITEM.PLATINUM_ORE;}
-                    if (name.Equals("Uranium")){return ITEM.URANIUM_ORE;}
+                    if (name.Equals("Stone")) { return ITEM.STONE; }
+                    if (name.Equals("Iron")) { return ITEM.IRON_ORE; }
+                    if (name.Equals("Nickel")) { return ITEM.NICKEL_ORE; }
+                    if (name.Equals("Cobalt")) { return ITEM.COBALT_ORE; }
+                    if (name.Equals("Magnesium")) { return ITEM.MAGNESIUM_ORE; }
+                    if (name.Equals("Silicon")) { return ITEM.SILICON_ORE; }
+                    if (name.Equals("Silver")) { return ITEM.SILVER_ORE; }
+                    if (name.Equals("Gold")) { return ITEM.GOLD_ORE; }
+                    if (name.Equals("Platinum")) { return ITEM.PLATINUM_ORE; }
+                    if (name.Equals("Uranium")) { return ITEM.URANIUM_ORE; }
                 }
                 if (typeId.EndsWith("_Ingot"))
                 {
@@ -398,7 +391,20 @@ namespace PartWatcher_alpha
 
             public string GetLcdString()
             {
-                return decodeItemName(_rawItem);
+                return DecodeItemName(_rawItem);
+            }
+
+            public override bool Equals(object obj)
+            {
+                var cast = obj as Item;
+                if (cast == null)
+                    return false;
+                return cast.itemType == itemType;
+            }
+
+            public bool Equals(ITEM argItemType)
+            {
+                return argItemType == itemType;
             }
         }
 
@@ -406,7 +412,7 @@ namespace PartWatcher_alpha
         {
             
             #region assembler blueprint strings
-            //item string stolen from https://steamcommunity.com/app/244850/discussions/0/527273452877873614/
+            //itemType string stolen from https://steamcommunity.com/app/244850/discussions/0/527273452877873614/
             const string BulletproofGlass = "MyObjectBuilder_BlueprintDefinition/BulletproofGlass";
             const string ComputerComponent = "MyObjectBuilder_BlueprintDefinition/ComputerComponent";
             const string ConstructionComponent = "MyObjectBuilder_BlueprintDefinition/ConstructionComponent";
@@ -498,9 +504,11 @@ namespace PartWatcher_alpha
                 _assembler.AddQueueItem(currentlyProducedItem.BlueprintId,currentlyProducedItem.Amount);
             }
 
-            public void EnqueueItem(Item.ITEM toBuild, int amount)
+            public void EnqueueItem(Item.ITEM toBuild, long amount)
             {
-                MyDefinitionId bluePrint = new MyDefinitionId();
+                if (amount < 1)
+                    return;
+                MyDefinitionId bluePrint;
 
                 #region builditem switch
                 switch (toBuild)
@@ -563,9 +571,41 @@ namespace PartWatcher_alpha
                     }
                 #endregion
 
-                _assembler.AddQueueItem(bluePrint, (decimal)amount);
+                _assembler.AddQueueItem(bluePrint, (decimal) amount);
             }
 
+            /// <summary>
+            /// Will take the given itemType and will enqueue as much as is need to satisfy the given qouta.
+            /// That means, if a qouta of 40 is given and there are already 20 items of this kind enqueued.
+            /// the method will issu only an additional 20 items
+            /// </summary>
+            /// <param name="toBuild">The itemType to build</param>
+            /// <param name="quotaAmount">The quota needed to be satisfied</param>
+            public void EnqueueToSatisfyQuota(Item.ITEM toBuild, long quotaAmount)
+            {
+                EnqueueItem(toBuild,quotaAmount - GetEnqueuedItemsOfType(toBuild));
+            }
+
+            /// <summary>
+            /// Will search the Asemblers queue for the given itemType and returns the 
+            /// </summary>
+            /// <param name="itemType"></param>
+            /// <returns></returns>
+            public long GetEnqueuedItemsOfType(Item.ITEM itemType)
+            {
+                var queuedItems = new List<MyProductionItem>();
+                _assembler.GetQueue(queuedItems);
+                long retAmount = 0;
+
+                foreach (var iterItem in queuedItems)
+                {
+                    if (Item.ConvertSubTypeAndTypeIdToItem(iterItem.BlueprintId.SubtypeName, iterItem.BlueprintId.SubtypeId.ToString()) == itemType)
+                    {
+                        retAmount += iterItem.Amount.ToIntSafe();
+                    }
+                }
+                return retAmount;
+            }
             private List<Item> GetInventory(bool getOutputInventory)
             {
                 var ret = new List<Item>();
@@ -585,8 +625,8 @@ namespace PartWatcher_alpha
                 return GetInventory(false);
             }
 
-            
         }
+
         #endregion
 
         public static class Util
