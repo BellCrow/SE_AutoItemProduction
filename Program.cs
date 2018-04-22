@@ -1,25 +1,14 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Diagnostics;
-using System.Linq;
-using System.Runtime.CompilerServices;
-using System.Runtime.Serialization;
-using System.Text;
-using System.Threading.Tasks;
-using Sandbox.Common;
 using Sandbox.ModAPI.Ingame;
-using Sandbox.Definitions;
-using Sandbox.Game.Multiplayer;
-using Sandbox.ModAPI.Interfaces;
-using VRage;
 using VRage.Game;
+using VRage.Game.Entity;
 using VRage.Game.ModAPI.Ingame;
-using VRage.Library.Collections;
 using IMyGridTerminalSystem = Sandbox.ModAPI.IMyGridTerminalSystem;
 
 namespace PartWatcher_alpha
 {
-    public class Programcode
+    public class Program
     {
         #region DONT COPY
 
@@ -31,6 +20,7 @@ namespace PartWatcher_alpha
 
         #endregion
 
+        private static System.Action<string> echodel;
         private const bool DEBUG = false;
         private const string CONTROL_BLOCK_PREFIX = "c_";
 
@@ -40,25 +30,33 @@ namespace PartWatcher_alpha
         //called every millisecond or so
         public void Main()
         {
-            //get lcd first
+             echodel = Echo;
+            //get lcd first 
+
             var container = new Container(GridTerminalSystem,CONTAINER_NAME);
             var assembler = new Assembler(GridTerminalSystem,"c_assembler");
             Echo(container.GetItemCount(Item.ITEM.STEEL_PLATE).ToString());
             var lcd = (IMyTextPanel) GridTerminalSystem.GetBlockWithName(LCD_DISPLAY_NAME);
             //itemType quota
             var quotaTable = new Dictionary<Item.ITEM, int> {{Item.ITEM.STEEL_PLATE, 50}};
+            var existing = container.GetItemCount(Item.ITEM.STEEL_PLATE);
 
             foreach (var quota in quotaTable)
             {
+
                 var existingItemCount = container.GetItemCount(quota.Key);
+                existingItemCount += Util.CountItemInInventory(assembler.GetOutputInventory(), Item.ITEM.STEEL_PLATE);
+                existingItemCount += (int)assembler.GetEnqueuedItemsOfType(Item.ITEM.STEEL_PLATE);
+                lcd.WritePublicText("Quota of " + quota.Value + " items issued");
+                lcd.WritePublicText(existingItemCount + " items in container and asembler output");
                 var toEnqueue = quota.Value - existingItemCount;
-                lcd.WritePublicText("Enqueing " + toEnqueue + " items");
+                lcd.WritePublicText("\nEnqueing " + toEnqueue + " items",true);
                 assembler.EnqueueToSatisfyQuota(quota.Key,toEnqueue);
             }
         }
 
         //called only once. can be used to init
-        public Programcode()
+        public Program()
         {
 
         }
@@ -118,7 +116,7 @@ namespace PartWatcher_alpha
             {
                 
                 var items = GetItems();
-
+                
                 return Util.CountItemInInventory(items, searcheditem);
             }
         }
@@ -187,6 +185,7 @@ namespace PartWatcher_alpha
             {
                 _rawItem = rawItem;
                 itemType = ConvertItemObjToItem(_rawItem);
+                amount = _rawItem.Amount.ToIntSafe();
             }
 
             public ITEM itemType;
@@ -337,7 +336,7 @@ namespace PartWatcher_alpha
 
             public static ITEM ConvertItemObjToItem(IMyInventoryItem item)
             {
-                return ConvertSubTypeAndTypeIdToItem(item.Content.SubtypeName, item.Content.SubtypeId.ToString());
+                return ConvertSubTypeAndTypeIdToItem(item.Content.SubtypeName, item.Content.TypeId.ToString());
             }
 
             public static ITEM ConvertSubTypeAndTypeIdToItem(string subTypeString, string typeId)
@@ -394,12 +393,9 @@ namespace PartWatcher_alpha
                 return DecodeItemName(_rawItem);
             }
 
-            public override bool Equals(object obj)
+            public bool Equals(Item obj)
             {
-                var cast = obj as Item;
-                if (cast == null)
-                    return false;
-                return cast.itemType == itemType;
+                return obj.itemType == itemType;
             }
 
             public bool Equals(ITEM argItemType)
@@ -641,11 +637,14 @@ namespace PartWatcher_alpha
                 var itemCount = 0;
                 foreach (var item in toCountIn)
                 {
-                    if (item.itemType == toCount)
+                    if (item.Equals(toCount))
+                    {
                         itemCount += item.amount;
+                    }
                 }
                 return itemCount;
             }
         }
+
     }
 }
