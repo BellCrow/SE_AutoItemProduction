@@ -14,46 +14,71 @@ namespace PartWatcher_alpha
 
         private static IMyGridTerminalSystem GridTerminalSystem;
 
-        private static void Echo(string msg)
-        {
-        }
+        private static void Echo(string msg){}
 
         #endregion
 
         private static System.Action<string> echodel;
+
         private const bool DEBUG = false;
         private const string CONTROL_BLOCK_PREFIX = "c_";
 
         private const string LCD_DISPLAY_NAME = "c_display";
         private const string CONTAINER_NAME = "c_container";
-           
+
         //called every millisecond or so
         public void Main()
         {
-             echodel = Echo;
-            //get lcd first 
+            echodel = Echo;
 
-            var container = new Container(GridTerminalSystem,CONTAINER_NAME);
-            var assembler = new Assembler(GridTerminalSystem,"c_assembler");
-            Echo(container.GetItemCount(Item.ITEM.STEEL_PLATE).ToString());
-            var lcd = (IMyTextPanel) GridTerminalSystem.GetBlockWithName(LCD_DISPLAY_NAME);
+            var container = new Container(GridTerminalSystem, CONTAINER_NAME);
+            var assembler = new Assembler(GridTerminalSystem, "c_assembler");
+
+            var lcd = (IMyTextPanel)GridTerminalSystem.GetBlockWithName(LCD_DISPLAY_NAME);
+
+
             //itemType quota
-            var quotaTable = new Dictionary<Item.ITEM, int> {{Item.ITEM.STEEL_PLATE, 50}};
-            var existing = container.GetItemCount(Item.ITEM.STEEL_PLATE);
+            var quotaTable = new Dictionary<Item.ITEM, int> {
+                { Item.ITEM.CONSTRUCTION_COMPONENT,20},
+                { Item.ITEM.COMPUTER_COMPONENTS,20},
+                { Item.ITEM.DISPLAY,20},
+                { Item.ITEM.METALGRID,20},
+                { Item.ITEM.INTERIOR_PLATE,20},
+                { Item.ITEM.STEEL_PLATE,20},
+                { Item.ITEM.SMALL_STEEL_TUBE,20},
+                { Item.ITEM.LARGE_STEEL_TUBE,20},
+                { Item.ITEM.BULLETPROOF_GLASS,20},
+                { Item.ITEM.REACTOR_COMPONENT,20},
+                { Item.ITEM.THRUSTER_COMPONENT,20},
+                { Item.ITEM.GRAVGEN_COMPONENT,20},
+                { Item.ITEM.MEDICAL_COMPONENT,20},
+                { Item.ITEM.RADIO_COMPONENT,20},
+                { Item.ITEM.DETECTOR_COMPONENT,20},
+                { Item.ITEM.SOLAR_CELL,20},
+                { Item.ITEM.POWER_CELL,20}
+            };
+
+            lcd.WritePublicText("Qoutas\n--------------------------------\n");
 
             foreach (var quota in quotaTable)
             {
-
                 var existingItemCount = container.GetItemCount(quota.Key);
-                existingItemCount += Util.CountItemInInventory(assembler.GetOutputInventory(), Item.ITEM.STEEL_PLATE);
-                existingItemCount += (int)assembler.GetEnqueuedItemsOfType(Item.ITEM.STEEL_PLATE);
-                lcd.WritePublicText("Quota of " + quota.Value + " items issued");
-                lcd.WritePublicText(existingItemCount + " items in container and asembler output");
+                existingItemCount += Util.CountItemInInventory(assembler.GetOutputInventory(), quota.Key);
                 var toEnqueue = quota.Value - existingItemCount;
-                lcd.WritePublicText("\nEnqueing " + toEnqueue + " items",true);
-                assembler.EnqueueToSatisfyQuota(quota.Key,toEnqueue);
+                var enqueued = assembler.GetEnqueuedItemsOfType(quota.Key);
+                if (toEnqueue > 0)
+                {
+                    assembler.EnqueueToSatisfyQuota(quota.Key, toEnqueue);
+                }
+                printQuotaEntry(quota, existingItemCount, $"{toEnqueue} in Queue", lcd);
             }
         }
+
+        public void printQuotaEntry(KeyValuePair<Item.ITEM, int> quotaEntry, int currentItemCount, string actionText, IMyTextPanel textPanel)
+        {
+            textPanel.WritePublicText($"{Item.ConvertItemTypeToString(quotaEntry.Key)}: {currentItemCount}/{quotaEntry.Value}->{actionText}\n", true);
+        }
+
 
         //called only once. can be used to init
         public Program()
@@ -107,28 +132,26 @@ namespace PartWatcher_alpha
             {
                 var ret = new List<Item>();
                 int inventory = 0;
-                foreach(var rawItem in _container.GetInventory(inventory).GetItems()) 
+                foreach (var rawItem in _container.GetInventory(inventory).GetItems())
                     ret.Add(new Item(rawItem));
                 return ret;
             }
 
             public int GetItemCount(Item.ITEM searcheditem)
             {
-                
+
                 var items = GetItems();
-                
+
                 return Util.CountItemInInventory(items, searcheditem);
             }
         }
 
         public class Item
         {
-
-            #region itemenum
             public enum ITEM
             {
-                CONTRUCTION_COMPONENT,
-                COMPUTER,
+                CONSTRUCTION_COMPONENT,
+                COMPUTER_COMPONENTS,
                 DISPLAY,
                 METALGRID,
                 INTERIOR_PLATE,
@@ -179,10 +202,9 @@ namespace PartWatcher_alpha
                 NOT_SUPPORTED_OR_UNKNOWN
             }
 
-            #endregion
-
             public Item(IMyInventoryItem rawItem)
             {
+
                 _rawItem = rawItem;
                 itemType = ConvertItemObjToItem(_rawItem);
                 amount = _rawItem.Amount.ToIntSafe();
@@ -342,17 +364,26 @@ namespace PartWatcher_alpha
             public static ITEM ConvertSubTypeAndTypeIdToItem(string subTypeString, string typeId)
             {
                 var name = subTypeString;
-
-                if (name.Equals("Construction")) { return ITEM.CONTRUCTION_COMPONENT; }
+                //this identifier for construction components is different 
+                //if the item is in the assembler queue or if it is in a container
+                //idk why though
+                if (name.Equals("Construction") || name.Equals("ConstructionComponent")) { return ITEM.CONSTRUCTION_COMPONENT; }
                 if (name.Equals("MetalGrid")) { return ITEM.METALGRID; }
                 if (name.Equals("InteriorPlate")) { return ITEM.INTERIOR_PLATE; }
-
                 if (name.Equals("SteelPlate")) { return ITEM.STEEL_PLATE; }
                 if (name.Equals("SmallTube")) { return ITEM.SMALL_STEEL_TUBE; }
                 if (name.Equals("LargeTube")) { return ITEM.LARGE_STEEL_TUBE; }
                 if (name.Equals("BulletproofGlass")) { return ITEM.BULLETPROOF_GLASS; }
-                if (name.Equals("Reactor")) { return ITEM.REACTOR_COMPONENT; }
-                if (name.Equals("Thrust")) { return ITEM.THRUSTER_COMPONENT; }
+                if (name.Equals("Reactor")|| name.Equals("ReactorComponent")) { return ITEM.REACTOR_COMPONENT; }
+                if (name.Equals("Thrust") || name.Equals("ThrustComponent")) { return ITEM.THRUSTER_COMPONENT; }
+                if (name.Equals("ComputerComponent") || name.Equals("Computer")){return ITEM.COMPUTER_COMPONENTS;}
+                if (name.Equals("GravityGenerator") || name.Equals("GravityGeneratorComponent")){return ITEM.GRAVGEN_COMPONENT;}
+                if (name.Equals("DetectorComponent") || name.Equals("Detector")) {return ITEM.DETECTOR_COMPONENT;}
+                if (name.Equals("RadioCommunicationComponent") || name.Equals("RadioCommunication")) {return ITEM.RADIO_COMPONENT;}
+                if (name.Equals("MedicalComponent") || name.Equals("Medical")) {return ITEM.MEDICAL_COMPONENT;}
+                if (name.Equals("Display") ){return ITEM.DISPLAY;}
+                if (name.Equals("SolarCell") ){return ITEM.SOLAR_CELL;}
+                if (name.Equals("PowerCell") ){return ITEM.POWER_CELL;}
 
                 if (typeId.EndsWith("_Ore"))
                 {
@@ -380,6 +411,7 @@ namespace PartWatcher_alpha
                     if (name.Equals("Platinum")) { return ITEM.PLATINUM_INGOT; }
                     if (name.Equals("Uranium")) { return ITEM.URANIUM_INGOT; }
                 }
+                Util.FatalError($"Unrecognized Item: Name = {name} TypeId = {typeId}");
                 return ITEM.NOT_SUPPORTED_OR_UNKNOWN;
             }
 
@@ -391,6 +423,14 @@ namespace PartWatcher_alpha
             public string GetLcdString()
             {
                 return DecodeItemName(_rawItem);
+            }
+
+            public static string ConvertItemTypeToString(ITEM item)
+            {
+                var ret = item.ToString();
+                ret = ret.ToLower();
+                ret = ret.Replace("_", " ");
+                return ret;
             }
 
             public bool Equals(Item obj)
@@ -406,7 +446,7 @@ namespace PartWatcher_alpha
 
         public class Assembler
         {
-            
+
             #region assembler blueprint strings
             //itemType string stolen from https://steamcommunity.com/app/244850/discussions/0/527273452877873614/
             const string BulletproofGlass = "MyObjectBuilder_BlueprintDefinition/BulletproofGlass";
@@ -463,12 +503,12 @@ namespace PartWatcher_alpha
             {
                 return _assembler;
             }
-            
-            public Assembler(IMyGridTerminalSystem gts,string assemblername)
+
+            public Assembler(IMyGridTerminalSystem gts, string assemblername)
             {
                 _gts = gts;
                 _assembler = (IMyAssembler)_gts.GetBlockWithName(assemblername);
-                if(_assembler == null)
+                if (_assembler == null)
                 { Util.FatalError(ASSEMBLER_NOT_FOUND); }
             }
 
@@ -497,7 +537,7 @@ namespace PartWatcher_alpha
                 _assembler.GetQueue(currentlyProducedItems);
                 var currentlyProducedItem = currentlyProducedItems[0];
                 _assembler.RemoveQueueItem(0, currentlyProducedItems[0].Amount);
-                _assembler.AddQueueItem(currentlyProducedItem.BlueprintId,currentlyProducedItem.Amount);
+                _assembler.AddQueueItem(currentlyProducedItem.BlueprintId, currentlyProducedItem.Amount);
             }
 
             public void EnqueueItem(Item.ITEM toBuild, long amount)
@@ -508,66 +548,66 @@ namespace PartWatcher_alpha
 
                 #region builditem switch
                 switch (toBuild)
-                    {
-                        case Item.ITEM.CONTRUCTION_COMPONENT:
-                            bluePrint = MyDefinitionId.Parse(ConstructionComponent);
-                            break;
-                        case Item.ITEM.COMPUTER:
-                            bluePrint = MyDefinitionId.Parse(ComputerComponent);
-                            break;
-                        case Item.ITEM.DISPLAY:
-                            bluePrint = MyDefinitionId.Parse(Display);
-                            break;
-                        case Item.ITEM.METALGRID:
-                            bluePrint = MyDefinitionId.Parse(MetalGrid);
-                            break;
-                        case Item.ITEM.INTERIOR_PLATE:
-                            bluePrint = MyDefinitionId.Parse(InteriorPlate);
-                            break;
-                        case Item.ITEM.STEEL_PLATE:
-                            bluePrint = MyDefinitionId.Parse(SteelPlate);
-                            break;
-                        case Item.ITEM.SMALL_STEEL_TUBE:
-                            bluePrint = MyDefinitionId.Parse(SmallTube);
-                            break;
-                        case Item.ITEM.LARGE_STEEL_TUBE:
-                            bluePrint = MyDefinitionId.Parse(LargeTube);
-                            break;
-                        case Item.ITEM.BULLETPROOF_GLASS:
-                            bluePrint = MyDefinitionId.Parse(BulletproofGlass);
-                            break;
-                        case Item.ITEM.REACTOR_COMPONENT:
-                            bluePrint = MyDefinitionId.Parse(ReactorComponent);
-                            break;
-                        case Item.ITEM.THRUSTER_COMPONENT:
-                            bluePrint = MyDefinitionId.Parse(ThrustComponent);
-                            break;
-                        case Item.ITEM.GRAVGEN_COMPONENT:
-                            bluePrint = MyDefinitionId.Parse(GravityGeneratorComponent);
-                            break;
-                        case Item.ITEM.MEDICAL_COMPONENT:
-                            bluePrint = MyDefinitionId.Parse(MedicalComponent);
-                            break;
-                        case Item.ITEM.RADIO_COMPONENT:
-                            bluePrint = MyDefinitionId.Parse(RadioCommunicationComponent);
-                            break;
-                        case Item.ITEM.DETECTOR_COMPONENT:
-                            bluePrint = MyDefinitionId.Parse(DetectorComponent);
-                            break;
-                        case Item.ITEM.SOLAR_CELL:
-                            bluePrint = MyDefinitionId.Parse(SolarCell);
-                            break;
-                        case Item.ITEM.POWER_CELL:
-                            bluePrint = MyDefinitionId.Parse(PowerCell);
-                            break;
-                        
-                        default:
-                            throw new Exception("Unknown Item to build given");
-                
-                    }
+                {
+                    case Item.ITEM.CONSTRUCTION_COMPONENT:
+                        bluePrint = MyDefinitionId.Parse(ConstructionComponent);
+                        break;
+                    case Item.ITEM.COMPUTER_COMPONENTS:
+                        bluePrint = MyDefinitionId.Parse(ComputerComponent);
+                        break;
+                    case Item.ITEM.DISPLAY:
+                        bluePrint = MyDefinitionId.Parse(Display);
+                        break;
+                    case Item.ITEM.METALGRID:
+                        bluePrint = MyDefinitionId.Parse(MetalGrid);
+                        break;
+                    case Item.ITEM.INTERIOR_PLATE:
+                        bluePrint = MyDefinitionId.Parse(InteriorPlate);
+                        break;
+                    case Item.ITEM.STEEL_PLATE:
+                        bluePrint = MyDefinitionId.Parse(SteelPlate);
+                        break;
+                    case Item.ITEM.SMALL_STEEL_TUBE:
+                        bluePrint = MyDefinitionId.Parse(SmallTube);
+                        break;
+                    case Item.ITEM.LARGE_STEEL_TUBE:
+                        bluePrint = MyDefinitionId.Parse(LargeTube);
+                        break;
+                    case Item.ITEM.BULLETPROOF_GLASS:
+                        bluePrint = MyDefinitionId.Parse(BulletproofGlass);
+                        break;
+                    case Item.ITEM.REACTOR_COMPONENT:
+                        bluePrint = MyDefinitionId.Parse(ReactorComponent);
+                        break;
+                    case Item.ITEM.THRUSTER_COMPONENT:
+                        bluePrint = MyDefinitionId.Parse(ThrustComponent);
+                        break;
+                    case Item.ITEM.GRAVGEN_COMPONENT:
+                        bluePrint = MyDefinitionId.Parse(GravityGeneratorComponent);
+                        break;
+                    case Item.ITEM.MEDICAL_COMPONENT:
+                        bluePrint = MyDefinitionId.Parse(MedicalComponent);
+                        break;
+                    case Item.ITEM.RADIO_COMPONENT:
+                        bluePrint = MyDefinitionId.Parse(RadioCommunicationComponent);
+                        break;
+                    case Item.ITEM.DETECTOR_COMPONENT:
+                        bluePrint = MyDefinitionId.Parse(DetectorComponent);
+                        break;
+                    case Item.ITEM.SOLAR_CELL:
+                        bluePrint = MyDefinitionId.Parse(SolarCell);
+                        break;
+                    case Item.ITEM.POWER_CELL:
+                        bluePrint = MyDefinitionId.Parse(PowerCell);
+                        break;
+
+                    default:
+                        throw new Exception("Unknown Item to build given");
+
+                }
                 #endregion
 
-                _assembler.AddQueueItem(bluePrint, (decimal) amount);
+                _assembler.AddQueueItem(bluePrint, (decimal)amount);
             }
 
             /// <summary>
@@ -579,7 +619,7 @@ namespace PartWatcher_alpha
             /// <param name="quotaAmount">The quota needed to be satisfied</param>
             public void EnqueueToSatisfyQuota(Item.ITEM toBuild, long quotaAmount)
             {
-                EnqueueItem(toBuild,quotaAmount - GetEnqueuedItemsOfType(toBuild));
+                EnqueueItem(toBuild, quotaAmount - GetEnqueuedItemsOfType(toBuild));
             }
 
             /// <summary>
@@ -600,22 +640,26 @@ namespace PartWatcher_alpha
                         retAmount += iterItem.Amount.ToIntSafe();
                     }
                 }
+                echodel.Invoke($"returning amount of {retAmount}");
                 return retAmount;
             }
+
             private List<Item> GetInventory(bool getOutputInventory)
             {
                 var ret = new List<Item>();
-                foreach (var item in _assembler.GetInventory(getOutputInventory?1:0).GetItems())
+                foreach (var item in _assembler.GetInventory(getOutputInventory ? 1 : 0).GetItems())
                 {
                     ret.Add(new Item(item));
                 }
 
                 return ret;
             }
+
             public List<Item> GetOutputInventory()
             {
                 return GetInventory(true);
             }
+
             public List<Item> GetInputInventory()
             {
                 return GetInventory(false);
@@ -632,7 +676,7 @@ namespace PartWatcher_alpha
                 throw new Exception(errorMessage);
             }
 
-            public static int CountItemInInventory(List<Item> toCountIn,Item.ITEM toCount)
+            public static int CountItemInInventory(List<Item> toCountIn, Item.ITEM toCount)
             {
                 var itemCount = 0;
                 foreach (var item in toCountIn)
