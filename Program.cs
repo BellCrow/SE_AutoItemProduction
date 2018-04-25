@@ -1,9 +1,13 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Text;
 using Sandbox.ModAPI.Ingame;
+using VRage;
 using VRage.Game;
 using VRage.Game.Entity;
+using VRage.Game.GUI.TextPanel;
 using VRage.Game.ModAPI.Ingame;
+using VRageMath;
 using IMyGridTerminalSystem = Sandbox.ModAPI.IMyGridTerminalSystem;
 
 namespace PartWatcher_alpha
@@ -14,29 +18,37 @@ namespace PartWatcher_alpha
 
         private static IMyGridTerminalSystem GridTerminalSystem;
 
-        private static void Echo(string msg){}
+        private static void Echo(string msg) { }
 
         #endregion
 
+
+        #region copy
         private static System.Action<string> echodel;
 
         private const bool DEBUG = false;
         private const string CONTROL_BLOCK_PREFIX = "c_";
 
-        private const string LCD_DISPLAY_NAME = "c_display";
+        private const string LCD_DISPLAY_NAME = "c_debugPanel";
         private const string CONTAINER_NAME = "c_container";
 
         //called every millisecond or so
         public void Main()
         {
             echodel = Echo;
-
-            var container = new Container(GridTerminalSystem, CONTAINER_NAME);
-            var assembler = new Assembler(GridTerminalSystem, "c_assembler");
+            //var container = new Container(GridTerminalSystem, CONTAINER_NAME);
+            //var assembler = new Assembler(GridTerminalSystem, "c_assembler");
 
             var lcd = (IMyTextPanel)GridTerminalSystem.GetBlockWithName(LCD_DISPLAY_NAME);
 
+            var reporter = new RollingLcdReporter(lcd);
 
+            for (int i = 0; i < 30; i++)
+            {
+                lcd.WritePublicText($"TestInfo + {i}",true);
+            }
+
+            /*
             //itemType quota
             var quotaTable = new Dictionary<Item.ITEM, int> {
                 { Item.ITEM.CONSTRUCTION_COMPONENT,20},
@@ -72,6 +84,7 @@ namespace PartWatcher_alpha
                 }
                 printQuotaEntry(quota, existingItemCount, $"{toEnqueue} in Queue", lcd);
             }
+            */
         }
 
         public void printQuotaEntry(KeyValuePair<Item.ITEM, int> quotaEntry, int currentItemCount, string actionText, IMyTextPanel textPanel)
@@ -109,6 +122,11 @@ namespace PartWatcher_alpha
                 }
             }
 
+            public Container(IMyCargoContainer cargoContainer)
+            {
+                _container = cargoContainer;
+            }
+
             public int GetDistinctItems()
             {
                 var items = GetItems();
@@ -144,6 +162,117 @@ namespace PartWatcher_alpha
 
                 return Util.CountItemInInventory(items, searcheditem);
             }
+
+            /// <summary>
+            /// Will merge all items of the same type into one stack
+            /// </summary>
+            public void MergeItemStacks()
+            {
+                var ditinctItemTypes = GetDistinctItemTypes();
+
+                foreach (var itemType in ditinctItemTypes)
+                {
+                    MergeItemToStack(itemType);
+                }
+            }
+
+            public List<Item.ITEM> GetDistinctItemTypes()
+            {
+                var ret = new List<Item.ITEM>();
+
+                var inventory = _container.GetInventory(0).GetItems();
+
+                foreach (var item in inventory)
+                {
+                    var itemInstance = new Item(item);
+                    if (!ret.Contains(itemInstance.itemType))
+                    {
+                        ret.Add(itemInstance.itemType);
+                    }
+                }
+                return ret;
+            }
+
+            public int GetNextItemIndexOfAmount(Item.ITEM searchedItem, int amount)
+            {
+                // try to merge searched item before
+                MergeItemToStack(searchedItem);
+
+                for (int i = 0; i < _container.GetInventory().GetItems().Count; i++)
+                {
+                    IMyInventoryItem item = _container.GetInventory().GetItems()[i];
+                    if (Item.ConvertItemObjToItem(item) == searchedItem && item.Amount >= amount)
+                        return i;
+                }
+                return -1;
+            }
+
+            public void MergeItemToStack(Item.ITEM itemType)
+            {
+                int firstFound = -1;
+                // find first stack index
+                for (int i = 0; i < _container.GetInventory().GetItems().Count; i++)
+                {
+                    IMyInventoryItem item = _container.GetInventory().GetItems()[i];
+                    if (Item.ConvertItemObjToItem(item) == itemType)
+                    {
+                        echodel.Invoke("object found");
+                        firstFound = i;
+                        break;
+                    }
+                }
+
+                // Merge other stack onto first one
+                for (int i = (firstFound + 1); i < _container.GetInventory().GetItems().Count; i++)
+                {
+                    IMyInventoryItem item = _container.GetInventory().GetItems()[i];
+                    if (Item.ConvertItemObjToItem(item) == itemType)
+                    {
+                        _container.GetInventory().TransferItemTo(_container.GetInventory(), i, firstFound, true);
+                    }
+                }
+            }
+
+            public bool MoveResourcesTo(Item.ITEM desiredMaterial, long amount, IMyInventory targetInventory)
+            {
+                if (GetItemCount(desiredMaterial) < amount
+                    || !targetInventory.IsConnectedTo(_container.GetInventory(0))
+                    || targetInventory.IsFull)
+                    return false;
+
+                MergeItemStacks();
+
+                var items = GetItems();
+
+                //look for a valid index in the target inventory, to which we can move the resource.
+                //that would either be an already existing stack of that item type or tha last free slot in the inventory
+                var targetIndex = -1;
+                for (var i = 0; i < items.Count; i++)
+                {
+                    if (items[i].itemType == desiredMaterial)
+                    {
+                        targetIndex = i;
+                        break;
+                    }
+                }
+
+                if (targetIndex == -1)
+                {
+                    targetIndex = items.Count;
+                }
+
+                for (var i = 0; i < items.Count; i++)
+                {
+                    if (items[i].itemType == desiredMaterial)
+                    {
+                       // _container.GetInventory(0).TransferItemTo(targetInventory, i, targetIndex, true,
+                         //   new MyFixedPoint() { RawValue = amount });
+                    }
+                }
+
+                return true;
+            }
+
         }
 
         public class Item
@@ -374,16 +503,16 @@ namespace PartWatcher_alpha
                 if (name.Equals("SmallTube")) { return ITEM.SMALL_STEEL_TUBE; }
                 if (name.Equals("LargeTube")) { return ITEM.LARGE_STEEL_TUBE; }
                 if (name.Equals("BulletproofGlass")) { return ITEM.BULLETPROOF_GLASS; }
-                if (name.Equals("Reactor")|| name.Equals("ReactorComponent")) { return ITEM.REACTOR_COMPONENT; }
+                if (name.Equals("Reactor") || name.Equals("ReactorComponent")) { return ITEM.REACTOR_COMPONENT; }
                 if (name.Equals("Thrust") || name.Equals("ThrustComponent")) { return ITEM.THRUSTER_COMPONENT; }
-                if (name.Equals("ComputerComponent") || name.Equals("Computer")){return ITEM.COMPUTER_COMPONENTS;}
-                if (name.Equals("GravityGenerator") || name.Equals("GravityGeneratorComponent")){return ITEM.GRAVGEN_COMPONENT;}
-                if (name.Equals("DetectorComponent") || name.Equals("Detector")) {return ITEM.DETECTOR_COMPONENT;}
-                if (name.Equals("RadioCommunicationComponent") || name.Equals("RadioCommunication")) {return ITEM.RADIO_COMPONENT;}
-                if (name.Equals("MedicalComponent") || name.Equals("Medical")) {return ITEM.MEDICAL_COMPONENT;}
-                if (name.Equals("Display") ){return ITEM.DISPLAY;}
-                if (name.Equals("SolarCell") ){return ITEM.SOLAR_CELL;}
-                if (name.Equals("PowerCell") ){return ITEM.POWER_CELL;}
+                if (name.Equals("ComputerComponent") || name.Equals("Computer")) { return ITEM.COMPUTER_COMPONENTS; }
+                if (name.Equals("GravityGenerator") || name.Equals("GravityGeneratorComponent")) { return ITEM.GRAVGEN_COMPONENT; }
+                if (name.Equals("DetectorComponent") || name.Equals("Detector")) { return ITEM.DETECTOR_COMPONENT; }
+                if (name.Equals("RadioCommunicationComponent") || name.Equals("RadioCommunication")) { return ITEM.RADIO_COMPONENT; }
+                if (name.Equals("MedicalComponent") || name.Equals("Medical")) { return ITEM.MEDICAL_COMPONENT; }
+                if (name.Equals("Display")) { return ITEM.DISPLAY; }
+                if (name.Equals("SolarCell")) { return ITEM.SOLAR_CELL; }
+                if (name.Equals("PowerCell")) { return ITEM.POWER_CELL; }
 
                 if (typeId.EndsWith("_Ore"))
                 {
@@ -446,7 +575,6 @@ namespace PartWatcher_alpha
 
         public class Assembler
         {
-
             #region assembler blueprint strings
             //itemType string stolen from https://steamcommunity.com/app/244850/discussions/0/527273452877873614/
             const string BulletproofGlass = "MyObjectBuilder_BlueprintDefinition/BulletproofGlass";
@@ -497,47 +625,51 @@ namespace PartWatcher_alpha
             private const string ASSEMBLER_NOT_FOUND = "Could not find Assembler with given Name";
 
             private IMyGridTerminalSystem _gts;
-            private readonly IMyAssembler _assembler;
+            public IMyAssembler RawAssembler { get; }
+
+            private readonly Container resourceBox;
 
             public IMyAssembler GetRawAssembler()
             {
-                return _assembler;
+                return RawAssembler;
             }
 
-            public Assembler(IMyGridTerminalSystem gts, string assemblername)
+            public Assembler(IMyGridTerminalSystem gts, string assemblername, Container resourceBox = null)
             {
                 _gts = gts;
-                _assembler = (IMyAssembler)_gts.GetBlockWithName(assemblername);
-                if (_assembler == null)
+                RawAssembler = (IMyAssembler)_gts.GetBlockWithName(assemblername);
+                if (RawAssembler == null)
                 { Util.FatalError(ASSEMBLER_NOT_FOUND); }
+
+                RawAssembler.UseConveyorSystem = false;
             }
 
             public bool MaterialMissing()
             {
-                return !_assembler.IsProducing &&
-                       !_assembler.IsQueueEmpty &&
-                        _assembler.IsWorking;
+                return !RawAssembler.IsProducing &&
+                       !RawAssembler.IsQueueEmpty &&
+                        RawAssembler.IsWorking;
             }
 
             public void CancelCurrentlyProducedItem()
             {
-                if (_assembler.IsQueueEmpty)
+                if (RawAssembler.IsQueueEmpty)
                     return;
                 var currentlyProducedItems = new List<MyProductionItem>();
-                _assembler.GetQueue(currentlyProducedItems);
-                _assembler.RemoveQueueItem(0, currentlyProducedItems[0].Amount);
+                RawAssembler.GetQueue(currentlyProducedItems);
+                RawAssembler.RemoveQueueItem(0, currentlyProducedItems[0].Amount);
             }
 
             public void MoveCurrentlyProducedItemToEndOfQueue()
             {
-                if (_assembler.IsQueueEmpty)
+                if (RawAssembler.IsQueueEmpty)
                     return;
                 var currentlyProducedItems = new List<MyProductionItem>();
 
-                _assembler.GetQueue(currentlyProducedItems);
+                RawAssembler.GetQueue(currentlyProducedItems);
                 var currentlyProducedItem = currentlyProducedItems[0];
-                _assembler.RemoveQueueItem(0, currentlyProducedItems[0].Amount);
-                _assembler.AddQueueItem(currentlyProducedItem.BlueprintId, currentlyProducedItem.Amount);
+                RawAssembler.RemoveQueueItem(0, currentlyProducedItems[0].Amount);
+                RawAssembler.AddQueueItem(currentlyProducedItem.BlueprintId, currentlyProducedItem.Amount);
             }
 
             public void EnqueueItem(Item.ITEM toBuild, long amount)
@@ -607,7 +739,85 @@ namespace PartWatcher_alpha
                 }
                 #endregion
 
-                _assembler.AddQueueItem(bluePrint, (decimal)amount);
+                RawAssembler.AddQueueItem(bluePrint, (decimal)amount);
+            }
+
+            public void ObtainResourcesForItem(Item.ITEM toBuild, long amount)
+            {
+                if (amount < 1)
+                    return;
+                #region builditem switch
+                switch (toBuild)
+                {
+                    case Item.ITEM.CONSTRUCTION_COMPONENT:
+
+                        break;
+                    case Item.ITEM.COMPUTER_COMPONENTS:
+
+                        break;
+                    case Item.ITEM.DISPLAY:
+
+                        break;
+                    case Item.ITEM.METALGRID:
+
+                        break;
+                    case Item.ITEM.INTERIOR_PLATE:
+
+                        break;
+                    case Item.ITEM.STEEL_PLATE:
+
+                        break;
+                    case Item.ITEM.SMALL_STEEL_TUBE:
+
+                        break;
+                    case Item.ITEM.LARGE_STEEL_TUBE:
+
+                        break;
+                    case Item.ITEM.BULLETPROOF_GLASS:
+
+                        break;
+                    case Item.ITEM.REACTOR_COMPONENT:
+
+                        break;
+                    case Item.ITEM.THRUSTER_COMPONENT:
+
+                        break;
+                    case Item.ITEM.GRAVGEN_COMPONENT:
+
+                        break;
+                    case Item.ITEM.MEDICAL_COMPONENT:
+
+                        break;
+                    case Item.ITEM.RADIO_COMPONENT:
+
+                        break;
+                    case Item.ITEM.DETECTOR_COMPONENT:
+
+                        break;
+                    case Item.ITEM.SOLAR_CELL:
+
+                        break;
+                    case Item.ITEM.POWER_CELL:
+
+                        break;
+
+                    default:
+                        throw new Exception("Unknown Item to build given");
+
+                }
+                #endregion
+
+            }
+
+            private bool ObtainResource(Item.ITEM resourceType, long amount)
+            {
+                return true;
+                var resourceCounter = 0;
+                if (resourceBox != null)
+                {
+                    resourceBox.MergeItemStacks();
+
+                }
             }
 
             /// <summary>
@@ -630,7 +840,7 @@ namespace PartWatcher_alpha
             public long GetEnqueuedItemsOfType(Item.ITEM itemType)
             {
                 var queuedItems = new List<MyProductionItem>();
-                _assembler.GetQueue(queuedItems);
+                RawAssembler.GetQueue(queuedItems);
                 long retAmount = 0;
 
                 foreach (var iterItem in queuedItems)
@@ -647,7 +857,7 @@ namespace PartWatcher_alpha
             private List<Item> GetInventory(bool getOutputInventory)
             {
                 var ret = new List<Item>();
-                foreach (var item in _assembler.GetInventory(getOutputInventory ? 1 : 0).GetItems())
+                foreach (var item in RawAssembler.GetInventory(getOutputInventory ? 1 : 0).GetItems())
                 {
                     ret.Add(new Item(item));
                 }
@@ -669,7 +879,7 @@ namespace PartWatcher_alpha
 
         #endregion
 
-        public static class Util
+        public class Util
         {
             public static void FatalError(string errorMessage)
             {
@@ -688,7 +898,162 @@ namespace PartWatcher_alpha
                 }
                 return itemCount;
             }
+
+            public class FixedSizeQueue<T> : Queue<T>
+            {
+                private object syncObj = new object();
+                public int FixedCapacity { get; }
+                public FixedSizeQueue(int fixedCapacity)
+                {
+                    FixedCapacity = fixedCapacity;
+                }
+
+                public new T Dequeue()
+                {
+                    lock (syncObj)
+                    {
+                        return base.Dequeue();
+                    }
+                }
+
+                public new void Enqueue(T obj)
+                {
+                    lock (syncObj)
+                    {
+                        while (Count >= FixedCapacity)
+                        {
+                            Dequeue();
+                        }
+                        base.Enqueue(obj); 
+                    }
+                }
+            }
         }
 
+
+        #region Reporter
+        public abstract class Reporter
+        {
+            private const string ShortInfoTag = "I";
+            private const string ShortWarnTag = "W";
+            private const string ShortSoftErrorTag = "SE";
+            private const string ShortHardErrorTag = "HE";
+
+            private const string VerboseInfoTag = "Info";
+            private const string VerboseWarnTag = "Warning";
+            private const string VerboseSoftErrorTag = "Softerror";
+            private const string VerboseHardErrorTag = "HardError";
+
+            protected string InfoTag => UseVerboseTags ? VerboseInfoTag : ShortInfoTag;
+            protected string WarnTag => UseVerboseTags ? VerboseWarnTag : ShortWarnTag;
+            protected string SoftErrorTag => UseVerboseTags ? VerboseSoftErrorTag : ShortSoftErrorTag;
+            protected string HardErrorTag => UseVerboseTags ? VerboseHardErrorTag : ShortHardErrorTag;
+
+            public bool UseVerboseTags;
+
+            public abstract void ReportInfo(string message);
+            public abstract void ReportWarning(string message);
+            public abstract void ReportSoftError(string message);
+            public abstract void ReportHardError(string message);
+        }
+
+        public class EchoReporter : Reporter
+        {
+            private readonly Action<string> _echoDelegate;
+
+            public EchoReporter(Action<string> echoDelegate)
+            {
+                if (echoDelegate == null)
+                {
+                    throw new Exception("Supplied null action to EchoReporter");
+                }
+                _echoDelegate = echoDelegate;
+            }
+
+            public override void ReportInfo(string message)
+            {
+                _echoDelegate.Invoke(InfoTag + $":{message}");
+            }
+
+            public override void ReportWarning(string message)
+            {
+                _echoDelegate.Invoke(WarnTag + $":{message}");
+            }
+
+            public override void ReportSoftError(string message)
+            {
+                _echoDelegate.Invoke(SoftErrorTag + $":{message}");
+            }
+
+            public override void ReportHardError(string message)
+            {
+                _echoDelegate.Invoke(HardErrorTag + $":{message}");
+            }
+        }
+
+        public class RollingLcdReporter : Reporter
+        {
+            private IMyTextPanel _lcdOutPanel;
+
+            private const float FontSize = 0.89f;
+            private const int LineLimit = 20;
+
+            private Util.FixedSizeQueue<string> rollingLog;
+
+            public RollingLcdReporter(IMyTextPanel outPutPanel)
+            {
+                if (outPutPanel == null)
+                {
+                    throw new Exception("Supplied null object to LCDReporter");
+                }
+
+                _lcdOutPanel = outPutPanel;
+                _lcdOutPanel.ShowPublicTextOnScreen();
+                _lcdOutPanel.FontSize = FontSize;
+                rollingLog = new Util.FixedSizeQueue<string>(LineLimit);
+
+            }
+
+            private void PrintRollingLog()
+            {
+                StringBuilder text = new StringBuilder();
+
+                foreach (var logEntry in rollingLog)
+                {
+                    text.Append(logEntry + "\n");
+                }
+
+                _lcdOutPanel.WritePublicText(text);
+            }
+
+            public override void ReportInfo(string message)
+            {
+                rollingLog.Enqueue($"{InfoTag}:{message}");
+                PrintRollingLog();
+            }
+
+            public override void ReportWarning(string message)
+            {
+                rollingLog.Enqueue($"{WarnTag}:{message}");
+                PrintRollingLog();
+            }
+
+            public override void ReportSoftError(string message)
+            {
+                rollingLog.Enqueue($"{SoftErrorTag}:{message}");
+                PrintRollingLog();
+            }
+
+            public override void ReportHardError(string message)
+            {
+                rollingLog.Enqueue($"{HardErrorTag}:{message}");
+                PrintRollingLog();
+            }
+        }
+
+        #endregion
+
+
+        #endregion
     }
 }
