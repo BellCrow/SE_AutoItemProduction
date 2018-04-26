@@ -1137,6 +1137,13 @@ namespace PartWatcher_alpha
                     }
                 }
             }
+
+            public static int DeltaTime(DateTime last)
+            {
+                DateTime now = DateTime.Now;
+                TimeSpan delta = now.Subtract(last);
+                return (int)delta.TotalSeconds;
+            }
         }
 
 
