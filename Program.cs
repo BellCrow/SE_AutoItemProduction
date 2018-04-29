@@ -21,101 +21,63 @@ namespace PartWatcher_alpha
 
         private static void Echo(string msg) { }
 
-        public void Main1()
-        {
-            /*echodel = Echo;
-            //var container = new Container(GridTerminalSystem, CONTAINER_NAME);
-            //var assembler = new Assembler(GridTerminalSystem, "c_assembler");
-
-            var lcd = (IMyTextPanel)GridTerminalSystem.GetBlockWithName(LCD_DISPLAY_NAME);
-
-            var reporter = new RollingLcdReporter(lcd);
-
-            for (int i = 0; i < 30; i++)
-            {
-                reporter.ReportInfo($"TestInfo + {i}");
-                reporter.ReportWarning($"TestInfo + {i}");
-                reporter.ReportSoftError($"TestInfo + {i}");
-                reporter.ReportHardError($"TestInfo + {i}");
-            }
-
-            
-            //itemType quota
-            var quotaTable = new Dictionary<Item.ITEM, int> {
-                { Item.ITEM.CONSTRUCTION_COMPONENT,20},
-                { Item.ITEM.COMPUTER_COMPONENTS,20},
-                { Item.ITEM.DISPLAY,20},
-                { Item.ITEM.METALGRID,20},
-                { Item.ITEM.INTERIOR_PLATE,20},
-                { Item.ITEM.STEEL_PLATE,20},
-                { Item.ITEM.SMALL_STEEL_TUBE,20},
-                { Item.ITEM.LARGE_STEEL_TUBE,20},
-                { Item.ITEM.BULLETPROOF_GLASS,20},
-                { Item.ITEM.REACTOR_COMPONENT,20},
-                { Item.ITEM.THRUSTER_COMPONENT,20},
-                { Item.ITEM.GRAVGEN_COMPONENT,20},
-                { Item.ITEM.MEDICAL_COMPONENT,20},
-                { Item.ITEM.RADIO_COMPONENT,20},
-                { Item.ITEM.DETECTOR_COMPONENT,20},
-                { Item.ITEM.SOLAR_CELL,20},
-                { Item.ITEM.POWER_CELL,20}
-            };
-
-            lcd.WritePublicText("Qoutas\n--------------------------------\n");
-
-            foreach (var quota in quotaTable)
-            {
-                var existingItemCount = container.GetItemCount(quota.Key);
-                existingItemCount += Util.CountItemInInventory(assembler.GetOutputInventory(), quota.Key);
-                var toEnqueue = quota.Value - existingItemCount;
-                var enqueued = assembler.GetEnqueuedItemsOfType(quota.Key);
-                if (toEnqueue > 0)
-              
-            {
-                    assembler.EnqueueToSatisfyQuota(quota.Key, toEnqueue);
-                }
-                printQuotaEntry(quota, existingItemCount, $"{toEnqueue} in Queue", lcd);
-            }
-            */
-        }
-
-        public void printQuotaEntry(KeyValuePair<Item.ITEM, int> quotaEntry, int currentItemCount, string actionText, IMyTextPanel textPanel)
-        {
-            textPanel.WritePublicText($"{Item.ConvertItemTypeToString(quotaEntry.Key)}: {currentItemCount}/{quotaEntry.Value}->{actionText}\n", true);
-        }
-
-
         #endregion
 
 
         #region copy
         private static System.Action<string> echodel;
 
-
         //called every millisecond or so
         public void Main()
         {
             echodel = Echo;
-            const string cargoFromName = "c_cargoIn";
-            const string cargoToName = "c_cargoOut";
+            const string cargoFromName = "Ingot Cargo";
+            const string cargoToName = "c_assemblerOut";
 
-            const string debugpanelName = "c_debugPanel";
-            const string errorPanelName = "c_debugPanel";
+            const string debugpanelName = "LCD_SchedAss01";
+            const string errorPanelName = "LCD_SchedAss02";
             const string assemblerPrefix = "c_assembler";
+            const string interruptName = "c_assemblerIC";
+
 
             var infoLogger = new RollingLcdReporter(GridTerminalSystem.GetBlockWithName(debugpanelName) as IMyTextPanel);
             var errorLogger = new RollingLcdReporter(GridTerminalSystem.GetBlockWithName(errorPanelName) as IMyTextPanel);
             var cargoFrom = new Container(GridTerminalSystem.GetBlockWithName(cargoFromName) as IMyCargoContainer);
             var cargoTo = new Container(GridTerminalSystem.GetBlockWithName(cargoToName) as IMyCargoContainer);
 
+
+            var interrupt = GridTerminalSystem.GetBlockWithName(interruptName) as IMyTimerBlock;
+
+            //quotas to fullfill can be added here
             var quotatable = new QuotaTable();
-            quotatable.quotaList.Add(new QuotaEntry());
+            quotatable.quotaList.Add(new QuotaEntry(Item.ITEM.STEEL_PLATE,50000));
+            quotatable.quotaList.Add(new QuotaEntry(Item.ITEM.CONSTRUCTION_COMPONENT,9000));
+            quotatable.quotaList.Add(new QuotaEntry(Item.ITEM.COMPUTER_COMPONENTS, 2500));
+            quotatable.quotaList.Add(new QuotaEntry(Item.ITEM.DISPLAY, 500));
+            quotatable.quotaList.Add(new QuotaEntry(Item.ITEM.METALGRID, 500));
+            quotatable.quotaList.Add(new QuotaEntry(Item.ITEM.INTERIOR_PLATE, 20000));
+            quotatable.quotaList.Add(new QuotaEntry(Item.ITEM.SMALL_STEEL_TUBE, 30000));
+            quotatable.quotaList.Add(new QuotaEntry(Item.ITEM.LARGE_STEEL_TUBE, 5000));
+            quotatable.quotaList.Add(new QuotaEntry(Item.ITEM.BULLETPROOF_GLASS, 1500));
+            quotatable.quotaList.Add(new QuotaEntry(Item.ITEM.REACTOR_COMPONENT, 15000));
+            quotatable.quotaList.Add(new QuotaEntry(Item.ITEM.THRUSTER_COMPONENT, 15000));
+            quotatable.quotaList.Add(new QuotaEntry(Item.ITEM.GRAVGEN_COMPONENT, 50));
+            quotatable.quotaList.Add(new QuotaEntry(Item.ITEM.MEDICAL_COMPONENT, 30));
+            quotatable.quotaList.Add(new QuotaEntry(Item.ITEM.RADIO_COMPONENT, 100));
+            quotatable.quotaList.Add(new QuotaEntry(Item.ITEM.DETECTOR_COMPONENT, 100));
+            quotatable.quotaList.Add(new QuotaEntry(Item.ITEM.SOLAR_CELL, 200));
+            quotatable.quotaList.Add(new QuotaEntry(Item.ITEM.POWER_CELL, 1200));
+            quotatable.quotaList.Add(new QuotaEntry(Item.ITEM.MOTOR, 5000));
+            quotatable.quotaList.Add(new QuotaEntry(Item.ITEM.GIRDER, 250));
+            quotatable.quotaList.Add(new QuotaEntry(Item.ITEM.SUPER_CONDUCTOR_COMPONENT,2000));
+
+
             var rawAssembler = new List<IMyAssembler>();
-            GridTerminalSystem.GetBlocksOfType<IMyAssembler>(rawAssembler,
+            GridTerminalSystem.GetBlocksOfType(rawAssembler,
                 myAssembler => myAssembler.CustomName.StartsWith(assemblerPrefix));
 
-            var assemblerFarm = new AssemblerFarm(quotatable, cargoFrom, cargoTo, rawAssembler, infoLogger, errorLogger);
-            assemblerFarm.EmptyAssemblerOutPuts();
+            var assemblerFarm = new AssemblerFarm(quotatable, cargoFrom, cargoTo, rawAssembler,interrupt, infoLogger, errorLogger);
+            assemblerFarm.Reschedule();
         }
 
         //called only once. can be used to init on server start
@@ -125,6 +87,7 @@ namespace PartWatcher_alpha
         public class QuotaTable
         {
             public List<QuotaEntry> quotaList;
+
             public QuotaTable()
             {
                 quotaList = new List<QuotaEntry>();
@@ -133,6 +96,30 @@ namespace PartWatcher_alpha
             public double GetGlobalPriority(int index)
             {
                 return quotaList[index].PriorityPercent / PriorityPercentSum;
+            }
+
+            private void UpdateGlobalPriorities()
+            {
+                for (int i = 0; i < quotaList.Count; i++)
+                {
+                    quotaList[i].GlobalPriority = GetGlobalPriority(i);
+                }
+            }
+
+            public void PrintQuotaTable(Reporter printTarget)
+            {
+                var list = GetEntriesSortedByPriority();
+                foreach (var entry in list)
+                {
+                    printTarget.ReportInfo($"{Item.ConvertItemTypeToString(entry.Item)}->{entry.CurrentCount}/{entry.Quota}->Prio {entry.GlobalPriority}");
+                }
+            }
+            public List<QuotaEntry> GetEntriesSortedByPriority()
+            {
+                UpdateGlobalPriorities();
+                var ret = new List<QuotaEntry>(quotaList);
+                ret.Sort((e1, e2) => e2.GlobalPriority.CompareTo(e1.GlobalPriority));
+                return ret;
             }
 
             private double PriorityPercentSum
@@ -146,29 +133,45 @@ namespace PartWatcher_alpha
                 }
             }
         }
-
         public class QuotaEntry
         {
-            public readonly Item.ITEM item;
-            public double quota;
-            public double currentCount;
-            public double PercentQuota => currentCount / quota;
+            public readonly Item.ITEM Item;
+            public readonly double Quota;
+            public double CurrentCount;
+            public double PercentQuota => CurrentCount / Quota;
             public double PriorityPercent => 1 - PercentQuota;
+
+            public double GlobalPriority;
+            public QuotaEntry(Item.ITEM itemType, double quota)
+            {
+                Item = itemType;
+                Quota = quota;
+            }
+
+            public override string ToString()
+            {
+                return $"ITEM:{Item.ToString()} {CurrentCount}/{Quota}";
+            }
         }
         #endregion
+
         public class AssemblerFarm
         {
+            private const int rescheduleDelay = 12;
+
             private readonly Reporter _infoLogger;
             private readonly Reporter _errorLogger;
             private readonly Container _resourcePool;
             private readonly Container _targetPool;
             private QuotaTable _qTable;
             private List<Assembler> _assemblers;
+            private IMyTimerBlock _interruptController;
 
             public AssemblerFarm(QuotaTable qTable,
                                 Container resourcePool,
                                 Container targetPool,
                                 List<IMyAssembler> rawAssemblers,
+                                IMyTimerBlock interruptController,
                                 Reporter infoLogger,
                                 Reporter errorLogger)
             {
@@ -197,6 +200,11 @@ namespace PartWatcher_alpha
                 {
                     _errorLogger.ReportSoftError("Supplied null as Resourcepool");
                 }
+                _interruptController = interruptController;
+                if (interruptController == null)
+                {
+                    _errorLogger.ReportSoftError("No Timerblock for Interrupts supplied");
+                }
 
                 if (_assemblers?.Count < 1)
                 {
@@ -206,16 +214,83 @@ namespace PartWatcher_alpha
                 _assemblers = new List<Assembler>();
                 foreach (var assembler in rawAssemblers)
                 {
-                    var managedAssembler = new Assembler(assembler, _resourcePool);
-                    infoLogger.ReportInfo($"Initializing assembler {managedAssembler.AssemblerName}");
+                    var managedAssembler = new Assembler(assembler, _resourcePool){Reporter = _errorLogger};
                     _assemblers.Add(managedAssembler);
                 }
-
             }
 
-            public void CheckQuotas()
+            public void Reschedule()
             {
+                echodel.Invoke("in reschedule");
+                ClearAssemblerJobs();
+
                 EmptyAssemblerOutPuts();
+
+                ReturnAssemblerResourcesToBox();
+
+                UpdateQuotas();
+
+                RescheduleAssemblers();
+               
+                ProgramInterrupt();
+
+                _infoLogger.ClearScreen();
+                _qTable.PrintQuotaTable(_infoLogger);
+            }
+
+            private void ProgramInterrupt()
+            {
+                _interruptController.TriggerDelay = rescheduleDelay;
+                _interruptController.StartCountdown();
+            }
+
+            private void RescheduleAssemblers()
+            {
+                var prioQuotas = _qTable.GetEntriesSortedByPriority();
+
+                for (var i = 0; i < _assemblers.Count; i++)
+                {
+                    if (i >= prioQuotas.Count )
+                        break;
+                    var createAmount = prioQuotas[i].Quota - prioQuotas[i].CurrentCount;
+                    if (createAmount <= 0)
+                        continue;
+
+                    _assemblers[i].Reporter = _infoLogger;
+
+
+                    var result = _assemblers[i].ObtainResourcesForItem(prioQuotas[i].Item, createAmount);
+                    if (result!= null && result.MissingMaterial)
+                    {
+                        _errorLogger.ReportSoftError($"Insufficient resource to create {createAmount} {Item.ConvertItemTypeToString(prioQuotas[i].Item)}");
+                    }
+                    _assemblers[i].EnqueueItem(prioQuotas[i].Item,(long)createAmount);
+                }
+            }
+
+            private void RescheduleAssemblers2()
+            {
+            }
+
+            private void UpdateQuotas()
+            {
+                foreach (var quotaEntry in _qTable.quotaList)
+                {
+                    UpdateSingleQuota(quotaEntry);
+                }
+            }
+
+            private void UpdateSingleQuota(QuotaEntry entry)
+            {
+                entry.CurrentCount = _targetPool.GetItemCount(entry.Item);
+            }
+
+            private void ReturnAssemblerResourcesToBox()
+            {
+                foreach (var assembler in _assemblers)
+                {
+                    assembler.ReturnResourcesToResourceBox();
+                }
             }
 
             public void EmptyAssemblerOutPuts()
@@ -228,10 +303,18 @@ namespace PartWatcher_alpha
                     }
                 }
             }
+
+            public void ClearAssemblerJobs()
+            {
+                foreach (var assembler in _assemblers)
+                {
+                    assembler.ClearJobQueue();
+                }
+            }
         }
 
-
         #region Space engineers abstractions
+
         public class Container
         {
 
@@ -302,7 +385,6 @@ namespace PartWatcher_alpha
                     IMyInventoryItem item = RawContainer.GetInventory().GetItems()[i];
                     if (Item.ConvertItemObjToItem(item) == itemType)
                     {
-                        echodel.Invoke($"{itemType.ToString()} found on index {i}");
                         firstFound = i;
                         break;
                     }
@@ -314,7 +396,6 @@ namespace PartWatcher_alpha
                     IMyInventoryItem item = RawContainer.GetInventory().GetItems()[i];
                     if (Item.ConvertItemObjToItem(item) == itemType)
                     {
-                        echodel.Invoke($"Found mergeable stack at {i}");
                         RawContainer.GetInventory().TransferItemTo(RawContainer.GetInventory(), i, firstFound, true);
                         i--;
                     }
@@ -357,14 +438,17 @@ namespace PartWatcher_alpha
                 lock (sync)
                 {
                     if (targetInventory == null
-                                || GetItemCount(desiredMaterial) < amount
                                 || !RawContainer.GetInventory(0).IsConnectedTo(targetInventory)
                                 || targetInventory.IsFull)
                     {
                         return false;
                     }
-
                     MergeItemStacks();
+
+                    if(amount > GetItemCount(desiredMaterial))
+                    {
+                        amount = GetItemCount(desiredMaterial);
+                    }
 
                     int sourceIndex = GetNextItemIndexOfAmount(desiredMaterial, amount);
 
@@ -414,6 +498,7 @@ namespace PartWatcher_alpha
                 POWER_CELL,
                 MOTOR,
                 GIRDER,
+                SUPER_CONDUCTOR_COMPONENT,
 
                 RIFLE,
                 ROCKET_LAUNCHER,
@@ -644,6 +729,7 @@ namespace PartWatcher_alpha
                 if (name.Equals("SolarCell")) { return ITEM.SOLAR_CELL; }
                 if (name.Equals("PowerCell")) { return ITEM.POWER_CELL; }
                 if (name.Equals("Motor")) { return ITEM.MOTOR; }
+                if (name.Contains("Super")) { return ITEM.SUPER_CONDUCTOR_COMPONENT; }
 
                 if (typeId.EndsWith("_Ore"))
                 {
@@ -671,7 +757,7 @@ namespace PartWatcher_alpha
                     if (name.Equals("Platinum")) { return ITEM.PLATINUM_INGOT; }
                     if (name.Equals("Uranium")) { return ITEM.URANIUM_INGOT; }
                 }
-                Util.FatalError($"Unrecognized Item: Name = {name} TypeId = {typeId}");
+                echodel.Invoke($"Unrecognized Item: Name = {name} TypeId = {typeId}");
                 return ITEM.NOT_SUPPORTED_OR_UNKNOWN;
             }
 
@@ -706,6 +792,28 @@ namespace PartWatcher_alpha
 
         public class Assembler
         {
+            public class AquisitionResult
+            {
+                public bool AmountError;
+
+                public bool MissingMaterial => MissingMaterialStrings.Count != 0;
+
+                public List<string> MissingMaterialStrings;
+
+                public AquisitionResult()
+                {
+                    MissingMaterialStrings = new List<string>();
+                }
+            }
+
+            //to produce an item in an assembler you can need multiple other items with different amounts.
+            //this calss represents one neccesary item+amount mapping for item production
+            private class ItemCostEntry
+            {
+                Item.ITEM material;
+                double amount;
+            }
+
             #region assembler blueprint strings
             //itemType string stolen from https://steamcommunity.com/app/244850/discussions/0/527273452877873614/
             const string BulletproofGlass = "MyObjectBuilder_BlueprintDefinition/BulletproofGlass";
@@ -753,8 +861,6 @@ namespace PartWatcher_alpha
 
             #endregion
 
-            private const string ASSEMBLER_NOT_FOUND = "Could not find Assembler with given Name";
-
             public IMyAssembler RawAssembler { get; }
 
             public string AssemblerName => RawAssembler.CustomName;
@@ -774,7 +880,7 @@ namespace PartWatcher_alpha
                 }
 
                 if (RawAssembler == null)
-                { Util.FatalError(ASSEMBLER_NOT_FOUND); }
+                { Util.FatalError("No Assembler supplied"); }
 
                 RawAssembler.UseConveyorSystem = false;
             }
@@ -786,13 +892,19 @@ namespace PartWatcher_alpha
                         RawAssembler.IsWorking;
             }
 
-            public void CancelCurrentlyProducedItem()
+            public void DeleteCurrentJob()
             {
                 if (RawAssembler.IsQueueEmpty)
                     return;
                 var currentlyProducedItems = new List<MyProductionItem>();
                 RawAssembler.GetQueue(currentlyProducedItems);
                 RawAssembler.RemoveQueueItem(0, currentlyProducedItems[0].Amount);
+            }
+
+            public void ClearJobQueue()
+            {
+                while(!RawAssembler.IsQueueEmpty)
+                { DeleteCurrentJob();}
             }
 
             public void MoveCurrentlyProducedItemToEndOfQueue()
@@ -809,9 +921,14 @@ namespace PartWatcher_alpha
 
             public bool EnqueueItem(Item.ITEM toBuild, long amount)
             {
+                Reporter.ReportInfo($"In item enqueue with amount of {(double)amount}");
+
                 if (amount < 1)
+                {
+                    Reporter.ReportSoftError("Tried to enqueue item amount of less than 1");
                     return false;
-                MyDefinitionId bluePrint;
+                }
+                MyDefinitionId bluePrint = new MyDefinitionId();
 
                 #region builditem switch
                 switch (toBuild)
@@ -867,105 +984,121 @@ namespace PartWatcher_alpha
                     case Item.ITEM.POWER_CELL:
                         bluePrint = MyDefinitionId.Parse(PowerCell);
                         break;
-
-                    default:
-                        Util.FatalError("Unknown Item to build given");
+                    case Item.ITEM.SUPER_CONDUCTOR_COMPONENT:
+                        bluePrint = MyDefinitionId.Parse(Superconductor);
                         break;
-
+                    case Item.ITEM.GIRDER:
+                        bluePrint = MyDefinitionId.Parse(GirderComponent);
+                        break;
+                    default:
+                        Reporter.ReportHardError($"Fatal Error Unknown Item to build given: { toBuild.ToString()}");
+                        break;
                 }
                 #endregion
-
-                return false;
+                Reporter.ReportInfo($"Enqueueing Items {Item.ConvertSubTypeAndTypeIdToItem(bluePrint.SubtypeName,bluePrint.TypeId.ToString())}");
+                RawAssembler.AddQueueItem(bluePrint, (double)amount);
+                return true;
             }
 
-            public bool ObtainResourcesForItem(Item.ITEM toBuild, double amount)
+            public AquisitionResult ObtainResourcesForItem(Item.ITEM toBuild, double amount)
             {
+  
+
+                Dictionary<Item.ITEM, > itemCosts = new Dictionary<Item.ITEM, System.Collections.Generic.List<Item.ITEM, double>>;
+                #region ITEM->material Mapping
+
+                #endregion
+
                 if (amount < 1)
                 {
                     Reporter?.ReportSoftError("amount error in resource aquisition");
-                    return false;
+                    return new AquisitionResult() { AmountError = true};
                 }
 
-                var ret = true;
+                var ret = "";
                 #region builditem switch
                 switch (toBuild)
                 {
                     case Item.ITEM.CONSTRUCTION_COMPONENT:
-                        ret &= ObtainResource(Item.ITEM.IRON_INGOT, amount * 3.34);
+                        ret += ObtainResource(Item.ITEM.IRON_INGOT, amount * 3.34);
                         break;
                     case Item.ITEM.COMPUTER_COMPONENTS:
-                        ret &= ObtainResource(Item.ITEM.IRON_INGOT, amount * 0.18);
-                        ret &= ObtainResource(Item.ITEM.SILICON_WAFER, amount * 0.08);
+                        ret += ObtainResource(Item.ITEM.IRON_INGOT, amount * 0.18);
+                        ret += ObtainResource(Item.ITEM.SILICON_WAFER, amount * 0.08);
                         break;
                     case Item.ITEM.DISPLAY:
-                        ret &= ObtainResource(Item.ITEM.IRON_INGOT, amount * 0.34);
-                        ret &= ObtainResource(Item.ITEM.SILICON_WAFER, amount * 1.68);
+                        ret += ObtainResource(Item.ITEM.IRON_INGOT, amount * 0.34);
+                        ret += ObtainResource(Item.ITEM.SILICON_WAFER, amount * 1.68);
                         break;
                     case Item.ITEM.METALGRID:
-                        ret &= ObtainResource(Item.ITEM.IRON_INGOT, amount * 4.01);
-                        ret &= ObtainResource(Item.ITEM.NICKEL_INGOT, amount * 1.68);
-                        ret &= ObtainResource(Item.ITEM.COBALT_INGOT, amount * 1.01);
+                        ret += ObtainResource(Item.ITEM.IRON_INGOT, amount * 4.01);
+                        ret += ObtainResource(Item.ITEM.NICKEL_INGOT, amount * 1.68);
+                        ret += ObtainResource(Item.ITEM.COBALT_INGOT, amount * 1.01);
                         break;
                     case Item.ITEM.INTERIOR_PLATE:
-                        ret &= ObtainResource(Item.ITEM.IRON_INGOT, amount * 1.18);
+                        ret += ObtainResource(Item.ITEM.IRON_INGOT, amount * 1.18);
                         break;
                     case Item.ITEM.STEEL_PLATE:
-                        ret &= ObtainResource(Item.ITEM.IRON_INGOT, amount * 7.01);
+                        ret += ObtainResource(Item.ITEM.IRON_INGOT, amount * 7.01);
                         break;
                     case Item.ITEM.SMALL_STEEL_TUBE:
-                        ret &= ObtainResource(Item.ITEM.IRON_INGOT, amount * 1.68);
+                        ret += ObtainResource(Item.ITEM.IRON_INGOT, amount * 1.68);
                         break;
                     case Item.ITEM.LARGE_STEEL_TUBE:
-                        ret &= ObtainResource(Item.ITEM.IRON_INGOT, amount * 10.01);
+                        ret += ObtainResource(Item.ITEM.IRON_INGOT, amount * 10.01);
                         break;
                     case Item.ITEM.BULLETPROOF_GLASS:
-                        ret &= ObtainResource(Item.ITEM.SILICON_WAFER, amount * 5.01);
+                        ret += ObtainResource(Item.ITEM.SILICON_WAFER, amount * 5.01);
                         break;
                     case Item.ITEM.REACTOR_COMPONENT:
-                        ret &= ObtainResource(Item.ITEM.IRON_INGOT, amount * 5.01);
-                        ret &= ObtainResource(Item.ITEM.GRAVEL, amount * 6.68);
-                        ret &= ObtainResource(Item.ITEM.SILVER_INGOT, amount * 1.68);
+                        ret += ObtainResource(Item.ITEM.IRON_INGOT, amount * 5.01);
+                        ret += ObtainResource(Item.ITEM.GRAVEL, amount * 6.68);
+                        ret += ObtainResource(Item.ITEM.SILVER_INGOT, amount * 1.68);
                         break;
                     case Item.ITEM.THRUSTER_COMPONENT:
-                        ret &= ObtainResource(Item.ITEM.IRON_INGOT, amount * 10.1);
-                        ret &= ObtainResource(Item.ITEM.COBALT_INGOT, amount * 3.34);
-                        ret &= ObtainResource(Item.ITEM.GOLD_INGOT, amount * 0.34);
-                        ret &= ObtainResource(Item.ITEM.PLATINUM_INGOT, amount * 0.14);
+                        ret += ObtainResource(Item.ITEM.IRON_INGOT, amount * 10.1);
+                        ret += ObtainResource(Item.ITEM.COBALT_INGOT, amount * 3.34);
+                        ret += ObtainResource(Item.ITEM.GOLD_INGOT, amount * 0.34);
+                        ret += ObtainResource(Item.ITEM.PLATINUM_INGOT, amount * 0.14);
                         break;
                     case Item.ITEM.GRAVGEN_COMPONENT:
-                        ret &= ObtainResource(Item.ITEM.IRON_INGOT, amount * 200.1);
-                        ret &= ObtainResource(Item.ITEM.COBALT_INGOT, amount * 73.34);
-                        ret &= ObtainResource(Item.ITEM.GOLD_INGOT, amount * 3.34);
-                        ret &= ObtainResource(Item.ITEM.SILVER_INGOT, amount * 1.68);
+                        ret += ObtainResource(Item.ITEM.IRON_INGOT, amount * 200.1);
+                        ret += ObtainResource(Item.ITEM.COBALT_INGOT, amount * 73.34);
+                        ret += ObtainResource(Item.ITEM.GOLD_INGOT, amount * 3.34);
+                        ret += ObtainResource(Item.ITEM.SILVER_INGOT, amount * 1.68);
                         break;
                     case Item.ITEM.MEDICAL_COMPONENT:
-                        ret &= ObtainResource(Item.ITEM.IRON_INGOT, amount * 20.1);
-                        ret &= ObtainResource(Item.ITEM.NICKEL_INGOT, amount * 23.34);
-                        ret &= ObtainResource(Item.ITEM.SILVER_INGOT, amount * 6.68);
+                        ret += ObtainResource(Item.ITEM.IRON_INGOT, amount * 20.1);
+                        ret += ObtainResource(Item.ITEM.NICKEL_INGOT, amount * 23.34);
+                        ret += ObtainResource(Item.ITEM.SILVER_INGOT, amount * 6.68);
                         break;
                     case Item.ITEM.RADIO_COMPONENT:
-                        ret &= ObtainResource(Item.ITEM.IRON_INGOT, amount * 2.68);
-                        ret &= ObtainResource(Item.ITEM.SILICON_WAFER, amount * 0.34);
+                        ret += ObtainResource(Item.ITEM.IRON_INGOT, amount * 2.68);
+                        ret += ObtainResource(Item.ITEM.SILICON_WAFER, amount * 0.34);
                         break;
                     case Item.ITEM.DETECTOR_COMPONENT:
-                        ret &= ObtainResource(Item.ITEM.IRON_INGOT, amount * 1.68);
-                        ret &= ObtainResource(Item.ITEM.NICKEL_INGOT, amount * 5.01);
+                        ret += ObtainResource(Item.ITEM.IRON_INGOT, amount * 1.68);
+                        ret += ObtainResource(Item.ITEM.NICKEL_INGOT, amount * 5.01);
                         break;
                     case Item.ITEM.SOLAR_CELL:
-                        ret &= ObtainResource(Item.ITEM.NICKEL_INGOT, amount * 3.34);
-                        ret &= ObtainResource(Item.ITEM.SILICON_WAFER, amount * 2.68);
+                        ret += ObtainResource(Item.ITEM.NICKEL_INGOT, amount * 3.34);
+                        ret += ObtainResource(Item.ITEM.SILICON_WAFER, amount * 2.68);
                         break;
                     case Item.ITEM.POWER_CELL:
-                        ret &= ObtainResource(Item.ITEM.IRON_INGOT, amount * 3.34);
-                        ret &= ObtainResource(Item.ITEM.SILICON_WAFER, amount * 0.34);
-                        ret &= ObtainResource(Item.ITEM.NICKEL_INGOT, amount * 0.68);
+                        ret += ObtainResource(Item.ITEM.IRON_INGOT, amount * 3.34);
+                        ret += ObtainResource(Item.ITEM.SILICON_WAFER, amount * 0.34);
+                        ret += ObtainResource(Item.ITEM.NICKEL_INGOT, amount * 0.68);
                         break;
                     case Item.ITEM.MOTOR:
-                        ret &= ObtainResource(Item.ITEM.IRON_INGOT, amount * 6.68);
-                        ret &= ObtainResource(Item.ITEM.NICKEL_INGOT, amount * 1.68);
+                        ret += ObtainResource(Item.ITEM.IRON_INGOT, amount * 6.68);
+                        ret += ObtainResource(Item.ITEM.NICKEL_INGOT, amount * 1.68);
                         break;
                     case Item.ITEM.GIRDER:
-                        ret &= ObtainResource(Item.ITEM.IRON_INGOT, amount * 2.34);
+                        ret += ObtainResource(Item.ITEM.IRON_INGOT, amount * 2.34);
+                        break;
+                    case Item.ITEM.SUPER_CONDUCTOR_COMPONENT:
+                        ret += ObtainResource(Item.ITEM.IRON_INGOT, amount * 1.68);
+                        ret += ObtainResource(Item.ITEM.GOLD_INGOT, amount * 3.01);
                         break;
                     default:
                         throw new Exception("Invalid item for resource aquisition supplied");
@@ -973,7 +1106,9 @@ namespace PartWatcher_alpha
                 }
                 #endregion
 
-                return ret;
+                var ret2 = new AquisitionResult();
+                ret2.MissingMaterialStrings.Add("PLEASE IMPLEMENT THIS");
+                return ret ==""?null:ret2;
             }
 
             private bool ObtainResource(Item.ITEM resourceType, double amount)
@@ -981,20 +1116,36 @@ namespace PartWatcher_alpha
                 if (resourcePool != null)
                 {
                     resourcePool.MergeItemStacks();
-                    if (!resourcePool.MoveResourcesTo(resourceType, amount, GetRawInputInventory()))
-                    {
-                        Reporter.ReportSoftError("Obtain Resources failed");
-                    }
-                    else
-                    {
-                        return true;
-                    }
-                }
-                else
-                {
-                    Reporter.ReportHardError("resourcePool was null on Resource aquisition");
+                    return resourcePool.MoveResourcesTo(resourceType, amount, GetRawInputInventory());
                 }
                 return false;
+            }
+
+            private bool CanObtainResources(Item.ITEM resourceType, double amount)
+            {
+                return resourcePool.GetItemCount(resourceType) >= amount;
+            }
+
+            public bool ReturnResourcesToResourceBox()
+            {
+                //TODO:this is duplicated code, thats used all over the place
+                if (resourcePool.RawContainer.GetInventory(0).IsFull)
+                {
+                    Reporter.ReportSoftError("Resource box ist full cant move resources there");
+                    return false;
+                }
+
+                var outPutInv = GetRawInputInventory();
+                while (outPutInv.IsItemAt(0))
+                {
+                    if (!outPutInv.TransferItemTo(resourcePool.RawContainer.GetInventory(0), 0))
+                    {
+                        Reporter.ReportSoftError("At Least one move into the resource box did not work");
+                        return false;
+                    }
+                }
+
+                return true;
             }
 
             /// <summary>
@@ -1172,6 +1323,8 @@ namespace PartWatcher_alpha
             public abstract void ReportWarning(string message);
             public abstract void ReportSoftError(string message);
             public abstract void ReportHardError(string message);
+
+            public abstract void ClearScreen();
         }
 
         public class EchoReporter : Reporter
@@ -1206,6 +1359,8 @@ namespace PartWatcher_alpha
             {
                 _echoDelegate.Invoke(HardErrorTag + $":{message}");
             }
+
+            public override void ClearScreen(){}
         }
 
         public class RollingLcdReporter : Reporter
@@ -1229,6 +1384,8 @@ namespace PartWatcher_alpha
                 _lcdOutPanel = outPutPanel;
                 _lcdOutPanel.ShowPublicTextOnScreen();
                 _lcdOutPanel.FontSize = FontSize;
+                ///init clear of the screen
+                _lcdOutPanel.WritePublicText(string.Empty);
                 rollingLog = new Util.FixedSizeQueue<string>(LineLimit);
 
             }
@@ -1278,6 +1435,15 @@ namespace PartWatcher_alpha
                 {
                     rollingLog.Enqueue($"{HardErrorTag}:{message}");
                     PrintRollingLog();
+                }
+            }
+
+            public override void ClearScreen()
+            {
+                lock (sync)
+                {
+                    rollingLog.Clear();
+                    PrintRollingLog(); 
                 }
             }
         }
