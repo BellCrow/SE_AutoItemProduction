@@ -23,61 +23,125 @@ namespace PartWatcher_alpha.SePartWatcher
             containerMoq.Setup(container => container.GetItemCount(p.Item.ITEM.GIRDER)).Returns(60);
             containerMoq.Setup(container => container.GetItemCount(p.Item.ITEM.STEEL_PLATE)).Returns(40);
 
-            var argList = new List<p.QuotaEntry>();
-            argList.Add(new p.QuotaEntry(p.Item.ITEM.STEEL_PLATE, 50));
-            argList.Add(new p.QuotaEntry(p.Item.ITEM.CONSTRUCTION_COMPONENT, 50));
-            argList.Add(new p.QuotaEntry(p.Item.ITEM.GIRDER, 100));
-            argList.Add(new p.QuotaEntry(p.Item.ITEM.MOTOR, 30));
+            var quotaTable = new p.QuotaTableFactory(containerMoq.Object);
+            quotaTable.AddQuotaForItem(p.Item.ITEM.STEEL_PLATE, 50);
+            quotaTable.AddQuotaForItem(p.Item.ITEM.CONSTRUCTION_COMPONENT, 50);
+            quotaTable.AddQuotaForItem(p.Item.ITEM.GIRDER, 100);
+            quotaTable.AddQuotaForItem(p.Item.ITEM.MOTOR, 30);
 
 
-            var _qTable = new p.QuotaTable(containerMoq.Object, argList);
+            var QuotaList = quotaTable.GetMissingItemQuota();
 
-            //get two times motor, as its still the top priority even after halfing its global priority
-            Assert.AreEqual(p.Item.ITEM.MOTOR,_qTable.GetHighestPrioQuota().Item);
-            Assert.AreEqual(p.Item.ITEM.MOTOR,_qTable.GetHighestPrioQuota().Item);
-            Assert.AreEqual(p.Item.ITEM.GIRDER,_qTable.GetHighestPrioQuota().Item);
+            Assert.AreEqual(4,QuotaList.Count);
+
+            Assert.AreEqual(p.Item.ITEM.MOTOR,QuotaList.GetNextHighestPrioritizedEntry().ItemType);
+            
+            Assert.AreEqual(p.Item.ITEM.MOTOR, QuotaList.GetNextHighestPrioritizedEntry().ItemType);
+            Assert.AreEqual(p.Item.ITEM.GIRDER, QuotaList.GetNextHighestPrioritizedEntry().ItemType);
         }
 
         [Test]
         public void FilterOutQuotaEntriesThatAreFulfilled()
         {
             var containerMoq = new Mock<p.Container>();
-            containerMoq.Setup(container => container.GetItemCount(p.Item.ITEM.MOTOR)).Returns(1);
-            containerMoq.Setup(container => container.GetItemCount(p.Item.ITEM.CONSTRUCTION_COMPONENT)).Returns(40);
-            containerMoq.Setup(container => container.GetItemCount(p.Item.ITEM.GIRDER)).Returns(60);
             containerMoq.Setup(container => container.GetItemCount(p.Item.ITEM.STEEL_PLATE)).Returns(50);
+            containerMoq.Setup(container => container.GetItemCount(p.Item.ITEM.CONSTRUCTION_COMPONENT)).Returns(90);
+            containerMoq.Setup(container => container.GetItemCount(p.Item.ITEM.GIRDER)).Returns(60);
+            containerMoq.Setup(container => container.GetItemCount(p.Item.ITEM.MOTOR)).Returns(1);
 
-            var argList = new List<p.QuotaEntry>();
-            argList.Add(new p.QuotaEntry(p.Item.ITEM.STEEL_PLATE, 10));
-            argList.Add(new p.QuotaEntry(p.Item.ITEM.CONSTRUCTION_COMPONENT, 50));
-            argList.Add(new p.QuotaEntry(p.Item.ITEM.GIRDER, 100));
-            argList.Add(new p.QuotaEntry(p.Item.ITEM.MOTOR, 30));
+            var quotaTable = new p.QuotaTableFactory(containerMoq.Object);
+            quotaTable.AddQuotaForItem(p.Item.ITEM.STEEL_PLATE, 50);
+            quotaTable.AddQuotaForItem(p.Item.ITEM.CONSTRUCTION_COMPONENT, 50);
+            quotaTable.AddQuotaForItem(p.Item.ITEM.GIRDER, 100);
+            quotaTable.AddQuotaForItem(p.Item.ITEM.MOTOR, 30);
 
 
-            var _qTable = new p.QuotaTable(containerMoq.Object, argList);
+            var QuotaList = quotaTable.GetMissingItemQuota();
+            Assert.AreEqual(2, QuotaList.Count);
 
-            //conservative guess at  which the steel plates should occur at least one time, no mater how low theire prio is
-            for (int i = 0; i < 1000; i++)
+            using (var enumerator = QuotaList.GetReadonlyQuotaList().GetEnumerator())
             {
-                Assert.AreNotEqual(p.Item.ITEM.STEEL_PLATE,_qTable.GetHighestPrioQuota().Item);
+                Assert.IsTrue(enumerator.MoveNext());
+                Assert.AreEqual(p.Item.ITEM.GIRDER, enumerator.Current.ItemType);
+                Assert.IsTrue(enumerator.MoveNext());
+                Assert.AreEqual(p.Item.ITEM.MOTOR, enumerator.Current.ItemType);
             }
+            Assert.AreEqual(p.Item.ITEM.MOTOR, QuotaList.GetNextHighestPrioritizedEntry().ItemType);
+            
+            Assert.AreEqual(p.Item.ITEM.MOTOR, QuotaList.GetNextHighestPrioritizedEntry().ItemType);
+            Assert.AreEqual(p.Item.ITEM.GIRDER, QuotaList.GetNextHighestPrioritizedEntry().ItemType);
         }
 
         [Test]
         public void RemoveQuotasThatAreMarkedAsUnbuildable()
         {
             var containerMoq = new Mock<p.Container>();
-            containerMoq.Setup(container => container.GetItemCount(p.Item.ITEM.STEEL_PLATE)).Returns(10);
+            containerMoq.Setup(container => container.GetItemCount(p.Item.ITEM.STEEL_PLATE)).Returns(45);
+            containerMoq.Setup(container => container.GetItemCount(p.Item.ITEM.CONSTRUCTION_COMPONENT)).Returns(45);
+            containerMoq.Setup(container => container.GetItemCount(p.Item.ITEM.GIRDER)).Returns(95);
+            containerMoq.Setup(container => container.GetItemCount(p.Item.ITEM.MOTOR)).Returns(1);
 
-            var argList = new List<p.QuotaEntry>();
-            argList.Add(new p.QuotaEntry(p.Item.ITEM.STEEL_PLATE, 50));
+            var quotaTable = new p.QuotaTableFactory(containerMoq.Object);
+            quotaTable.AddQuotaForItem(p.Item.ITEM.STEEL_PLATE, 50);
+            quotaTable.AddQuotaForItem(p.Item.ITEM.CONSTRUCTION_COMPONENT, 50);
+            quotaTable.AddQuotaForItem(p.Item.ITEM.GIRDER, 100);
+            quotaTable.AddQuotaForItem(p.Item.ITEM.MOTOR, 900);
 
-            var _qTable = new p.QuotaTable(containerMoq.Object, argList);
+            var QuotaList = quotaTable.GetMissingItemQuota();
 
-            Assert.AreEqual(_qTable.GetHighestPrioQuota().Item,p.Item.ITEM.STEEL_PLATE);
+            Assert.AreEqual(4, QuotaList.Count);
+            var highestPrio = QuotaList.GetNextHighestPrioritizedEntry();
+            Assert.AreEqual(p.Item.ITEM.MOTOR, highestPrio.ItemType);
+            highestPrio.CantBeBuilt = true;
+            Assert.AreEqual(p.Item.ITEM.STEEL_PLATE, QuotaList.GetNextHighestPrioritizedEntry().ItemType);
 
-            _qTable.MarkLastHighestPriorityItemAsUnbuildabel();
-            Assert.IsNull(_qTable.GetHighestPrioQuota());
+        }
+
+        [Test]
+        public void IgnoreitesmWithNoMissingAmountAfterBuildEnqueing()
+        {
+            var containerMoq = new Mock<p.Container>();
+            containerMoq.Setup(container => container.GetItemCount(p.Item.ITEM.STEEL_PLATE)).Returns(45);
+            containerMoq.Setup(container => container.GetItemCount(p.Item.ITEM.CONSTRUCTION_COMPONENT)).Returns(45);
+            containerMoq.Setup(container => container.GetItemCount(p.Item.ITEM.GIRDER)).Returns(95);
+            containerMoq.Setup(container => container.GetItemCount(p.Item.ITEM.MOTOR)).Returns(1);
+
+            var quotaTable = new p.QuotaTableFactory(containerMoq.Object);
+            quotaTable.AddQuotaForItem(p.Item.ITEM.STEEL_PLATE, 50);
+            quotaTable.AddQuotaForItem(p.Item.ITEM.CONSTRUCTION_COMPONENT, 50);
+            quotaTable.AddQuotaForItem(p.Item.ITEM.GIRDER, 100);
+            quotaTable.AddQuotaForItem(p.Item.ITEM.MOTOR, 900);
+
+            var QuotaList = quotaTable.GetMissingItemQuota();
+
+            Assert.AreEqual(4, QuotaList.Count);
+            var highestPrio = QuotaList.GetNextHighestPrioritizedEntry();
+            Assert.AreEqual(p.Item.ITEM.MOTOR, highestPrio.ItemType);
+            highestPrio.MissingAmount = 0;
+            Assert.AreEqual(p.Item.ITEM.STEEL_PLATE, QuotaList.GetNextHighestPrioritizedEntry().ItemType);
+        }
+
+        [Test]
+        public void ReturnNullIfAllQuotasAreFullFilled()
+        {
+            var containerMoq = new Mock<p.Container>();
+            containerMoq.Setup(container => container.GetItemCount(p.Item.ITEM.STEEL_PLATE)).Returns(50);
+            containerMoq.Setup(container => container.GetItemCount(p.Item.ITEM.CONSTRUCTION_COMPONENT)).Returns(50);
+            containerMoq.Setup(container => container.GetItemCount(p.Item.ITEM.GIRDER)).Returns(100);
+            containerMoq.Setup(container => container.GetItemCount(p.Item.ITEM.MOTOR)).Returns(900);
+
+            var quotaTable = new p.QuotaTableFactory(containerMoq.Object);
+            quotaTable.AddQuotaForItem(p.Item.ITEM.STEEL_PLATE, 50);
+            quotaTable.AddQuotaForItem(p.Item.ITEM.CONSTRUCTION_COMPONENT, 50);
+            quotaTable.AddQuotaForItem(p.Item.ITEM.GIRDER, 100);
+            quotaTable.AddQuotaForItem(p.Item.ITEM.MOTOR, 900);
+
+            var QuotaList = quotaTable.GetMissingItemQuota();
+
+            Assert.AreEqual(0, QuotaList.Count);
+            var highestPrio = QuotaList.GetNextHighestPrioritizedEntry();
+            Assert.IsNull(highestPrio);
+            
         }
     }
 }

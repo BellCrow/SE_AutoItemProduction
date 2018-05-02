@@ -50,185 +50,151 @@ namespace PartWatcher_alpha
             var interrupt = GridTerminalSystem.GetBlockWithName(interruptName) as IMyTimerBlock;
 
             //quotas to fullfill can be added here
-            var quotaList = new List<QuotaEntry>();
-            quotaList.Add(new QuotaEntry(Item.ITEM.STEEL_PLATE, 45000));
-            quotaList.Add(new QuotaEntry(Item.ITEM.CONSTRUCTION_COMPONENT, 15000));
-            quotaList.Add(new QuotaEntry(Item.ITEM.COMPUTER_COMPONENTS, 2500));
-            quotaList.Add(new QuotaEntry(Item.ITEM.DISPLAY, 500));
-            quotaList.Add(new QuotaEntry(Item.ITEM.METALGRID, 500));
-            quotaList.Add(new QuotaEntry(Item.ITEM.INTERIOR_PLATE, 20000));
-            quotaList.Add(new QuotaEntry(Item.ITEM.SMALL_STEEL_TUBE, 30000));
-            quotaList.Add(new QuotaEntry(Item.ITEM.LARGE_STEEL_TUBE, 5000));
-            quotaList.Add(new QuotaEntry(Item.ITEM.BULLETPROOF_GLASS, 1500));
-            quotaList.Add(new QuotaEntry(Item.ITEM.REACTOR_COMPONENT, 15000));
-            quotaList.Add(new QuotaEntry(Item.ITEM.THRUSTER_COMPONENT, 15000));
-            quotaList.Add(new QuotaEntry(Item.ITEM.GRAVGEN_COMPONENT, 50));
-            quotaList.Add(new QuotaEntry(Item.ITEM.MEDICAL_COMPONENT, 30));
-            quotaList.Add(new QuotaEntry(Item.ITEM.RADIO_COMPONENT, 100));
-            quotaList.Add(new QuotaEntry(Item.ITEM.DETECTOR_COMPONENT, 100));
-            quotaList.Add(new QuotaEntry(Item.ITEM.SOLAR_CELL, 200));
-            quotaList.Add(new QuotaEntry(Item.ITEM.POWER_CELL, 1200));
-            quotaList.Add(new QuotaEntry(Item.ITEM.MOTOR, 5000));
-            quotaList.Add(new QuotaEntry(Item.ITEM.GIRDER, 250));
-            quotaList.Add(new QuotaEntry(Item.ITEM.SUPER_CONDUCTOR_COMPONENT, 2000));
-
-            var quotatable = new QuotaTable(cargoTo, quotaList);
+            var quotaList = new QuotaTableFactory(cargoTo,errorLogger);
+            quotaList.AddQuotaForItem(Item.ITEM.STEEL_PLATE, 45000);
+            quotaList.AddQuotaForItem(Item.ITEM.CONSTRUCTION_COMPONENT, 15000);
+            quotaList.AddQuotaForItem(Item.ITEM.COMPUTER_COMPONENTS, 2500);
+            quotaList.AddQuotaForItem(Item.ITEM.DISPLAY, 500);
+            quotaList.AddQuotaForItem(Item.ITEM.METALGRID, 500);
+            quotaList.AddQuotaForItem(Item.ITEM.INTERIOR_PLATE, 20000);
+            quotaList.AddQuotaForItem(Item.ITEM.SMALL_STEEL_TUBE, 30000);
+            quotaList.AddQuotaForItem(Item.ITEM.LARGE_STEEL_TUBE, 5000);
+            quotaList.AddQuotaForItem(Item.ITEM.BULLETPROOF_GLASS, 1500);
+            quotaList.AddQuotaForItem(Item.ITEM.REACTOR_COMPONENT, 15000);
+            quotaList.AddQuotaForItem(Item.ITEM.THRUSTER_COMPONENT, 15000);
+            quotaList.AddQuotaForItem(Item.ITEM.GRAVGEN_COMPONENT, 50);
+            quotaList.AddQuotaForItem(Item.ITEM.MEDICAL_COMPONENT, 30);
+            quotaList.AddQuotaForItem(Item.ITEM.RADIO_COMPONENT, 100);
+            quotaList.AddQuotaForItem(Item.ITEM.DETECTOR_COMPONENT, 100);
+            quotaList.AddQuotaForItem(Item.ITEM.SOLAR_CELL, 200);
+            quotaList.AddQuotaForItem(Item.ITEM.POWER_CELL, 1200);
+            quotaList.AddQuotaForItem(Item.ITEM.MOTOR, 5000);
+            quotaList.AddQuotaForItem(Item.ITEM.GIRDER, 250);
+            quotaList.AddQuotaForItem(Item.ITEM.SUPER_CONDUCTOR_COMPONENT, 2000);
 
             var rawAssembler = new List<IMyAssembler>();
             GridTerminalSystem.GetBlocksOfType(rawAssembler,
                 myAssembler => myAssembler.CustomName.StartsWith(assemblerPrefix));
 
-            var assemblerFarm = new AssemblerFarm(quotatable, cargoFrom, cargoTo, rawAssembler, interrupt, infoLogger, errorLogger);
+            var assemblerFarm = new AssemblerFarm(quotaList, cargoFrom, cargoTo, rawAssembler, interrupt, infoLogger, errorLogger);
             assemblerFarm.Reschedule();
         }
 
         public Program(){}
 
         #region quota data
+
+        public class QuotaTableFactory
+        {
+            private Container _toSurveyForQuotas;
+            private Dictionary<Item.ITEM, int> _itemQuotaTable;
+            private Reporter _errorLogger;
+
+            public QuotaTableFactory(Container quotaTarget,Reporter errorLogger = null)
+            {
+                _toSurveyForQuotas = quotaTarget;
+                _itemQuotaTable = new Dictionary<Item.ITEM, int>();
+                _errorLogger = errorLogger;
+            }
+
+            public bool AddQuotaForItem(Item.ITEM itemType, int amount)
+            {
+                if (_itemQuotaTable.ContainsKey(itemType))
+                {
+                    _errorLogger?.ReportSoftError("Tried to supply same item type twice for quotatable");
+                    return false;
+                }
+                _itemQuotaTable.Add(itemType,amount);
+                return true;
+            }
+
+            public QuotaTable GetMissingItemQuota()
+            {
+                var retList = new List<QuotaEntry>();
+                var QuotaList = new List<int>();
+                var Amountlist = new List<int>();
+
+                foreach (var itemTableEntry in _itemQuotaTable)
+                {
+                    var quotaAmount = itemTableEntry.Value;
+                    var existingAmount = _toSurveyForQuotas.GetItemCount(itemTableEntry.Key);
+                    
+                    //skip itemtypes, that have theire quota already fullfilled
+                    if(existingAmount >= quotaAmount)
+                        continue;
+                    //save the percent values for calculation of the global priorities
+                    QuotaList.Add(quotaAmount);
+                    Amountlist.Add(existingAmount);
+
+                    var entry = new QuotaEntry
+                    {
+                        ItemType = itemTableEntry.Key,
+                        MissingAmount = quotaAmount - existingAmount
+                    };
+
+                    retList.Add(entry);
+                }
+
+
+                //now calculate the actual global priorities, that are used for scheduling
+                var percentList = new List<double>();
+                double prioPercentSum = 0;
+
+                for (var i = 0; i < QuotaList.Count; i++)
+                {
+                    double percent = 1.0 - (double)Amountlist[i] / (double)QuotaList[i];
+                    prioPercentSum += percent;
+                    percentList.Add(percent);
+                }
+
+                for (var i = 0; i < retList.Count; i++)
+                {
+                    retList[i].GlobalPriority = percentList[i] / prioPercentSum;
+                }
+                return new QuotaTable(retList);
+            }
+        }
+
         public class QuotaTable
         {
-            public List<QuotaEntry> QuotaList;
-            private bool _quotasCalculated;
-            private readonly Container _quotaTarget;
-
-            private double PriorityPercentSum
+            private List<QuotaEntry> _sessionQuotas;
+            
+            public QuotaTable(List<QuotaEntry> quotas)
             {
-                get
+                _sessionQuotas = quotas;
+                if (_sessionQuotas== null)
                 {
-                    double global = 0;
-                    foreach (var entry in QuotaList)
-                        global += entry.PriorityPercent;
-                    return global;
+                    Util.FatalError("Supplied null quotalist");
                 }
             }
 
-            private Item.ITEM? _lastHighestPrio;
-
-            public QuotaTable(Container quotaTarget,List<QuotaEntry> quotas)
+            public QuotaEntry GetNextHighestPrioritizedEntry()
             {
-                _quotaTarget = quotaTarget;
-                QuotaList = quotas;
-                _quotasCalculated = false;
-                _lastHighestPrio = null;
-                if(quotas.Count == 0){Util.FatalError("Supplied empty quota list to table");}
-            }
-
-            public QuotaEntry GetHighestPrioQuota()
-            {
-                UpdateValues();
-                _quotasCalculated = true;
-
-                //remove entries from the quotaList, which were marked as not buildable or who are already at full quota
-
-                QuotaList.RemoveAll(e => !e.NeedsRebuilding);
-
-                foreach (var entry in QuotaList)
-                {
-                    echodel.Invoke(entry.ToString());
-                }
-                QuotaList.RemoveAll(e => e.NotBuildable);
-                QuotaList.Sort((e1,e2)=>e2.GlobalPriority.CompareTo(e1.GlobalPriority));
-
-                if (QuotaList.Count == 0)
+                if (_sessionQuotas.Count == 0)
                 {
                     return null;
                 }
-                var ret = new QuotaEntry(QuotaList[0]);
-
-                //half the priority, and sort again, as this entry has been assigned to an assembler
-                //thats a way to give itesm with very high priority multiple assemblers
-                QuotaList[0].GlobalPriority /= 2;
-                QuotaList.Sort((e1, e2) => e2.GlobalPriority.CompareTo(e1.GlobalPriority));
-
-                _lastHighestPrio = ret.Item;
-                return ret;
+                _sessionQuotas.RemoveAll(e => e.CantBeBuilt || e.MissingAmount <= 0);
+                _sessionQuotas.Sort((e1,e2)=>e2.GlobalPriority.CompareTo(e1.GlobalPriority));
+                _sessionQuotas[0].GlobalPriority /= 2;
+                return _sessionQuotas[0];
             }
 
-            public void MarkLastHighestPriorityItemAsUnbuildabel()
+            public int Count => _sessionQuotas.Count;
+
+            public IEnumerable<QuotaEntry> GetReadonlyQuotaList()
             {
-                if (_lastHighestPrio == null){ return;}
-
-                foreach (var entry in QuotaList)
-                {
-                    if (entry.Item == _lastHighestPrio)
-                    {
-                        entry.NotBuildable = true;
-                    }
-                }
-            }
-
-            public double GetGlobalPriority(int index)
-            {
-                return QuotaList[index].PriorityPercent / PriorityPercentSum;
-            }
-
-            private void UpdateValues()
-            {
-                foreach (var quota in QuotaList)
-                {
-
-                    quota.CurrentCount = _quotaTarget.GetItemCount(quota.Item);
-                    echodel.Invoke("UpdatedItemCount: "+quota.CurrentCount);
-                }
-
-                for (int i = 0; i < QuotaList.Count; i++)
-                {
-                    QuotaList[i].GlobalPriority = GetGlobalPriority(i);
-                }
-            }
-
-            public void PrintQuotaTable(Reporter printTarget)
-            {
-                foreach (var entry in QuotaList)
-                {
-                    printTarget.ReportInfo($"{Item.ConvertItemTypeToString(entry.Item)}->{entry.CurrentCount}/{entry.Quota}->Prio {entry.GlobalPriority}");
-                }
+                return _sessionQuotas;
             }
         }
-
         public class QuotaEntry
         {
-            public readonly Item.ITEM Item;
-            public readonly double Quota;
-            public double CurrentCount;
-            public double PercentQuota => CurrentCount / Quota;
-            public double PriorityPercent => 1 - PercentQuota;
+            public Item.ITEM ItemType;
+            public int MissingAmount;
             public double GlobalPriority;
-            public bool NeedsRebuilding => Quota - CurrentCount > 0;
-            public bool NotBuildable;
-
-            public double MissingAmount
-            {
-                get
-                {
-                    if (NeedsRebuilding)
-                    {
-                        return Quota - CurrentCount;
-                    }
-                    return 0;
-                }
-            }
-
-            
-            public QuotaEntry(Item.ITEM itemType, double quota)
-            {
-                Item = itemType;
-                Quota = quota;
-                NotBuildable = false;
-            }
-
-            public QuotaEntry(QuotaEntry toCopy)
-            {
-                Item = toCopy.Item;
-                Quota = toCopy.Quota;
-                GlobalPriority = toCopy.GlobalPriority;
-            }
-             
-            public override string ToString()
-            {
-                return $"{Item.ToString()} NR:{NeedsRebuilding} {CurrentCount}/{Quota} ->G:{GlobalPriority}";
-            }
+            public bool CantBeBuilt;
         }
+
         #endregion
 
         public class AssemblerFarm
@@ -240,11 +206,11 @@ namespace PartWatcher_alpha
             private readonly Reporter _errorLogger;
             private readonly Container _resourcePool;
             private readonly Container _targetPool;
-            private QuotaTable _qTable;
+            private QuotaTableFactory _qTable;
             private List<Assembler> _assemblers;
             private IMyTimerBlock _interruptController;
 
-            public AssemblerFarm(QuotaTable qTable,
+            public AssemblerFarm(QuotaTableFactory qTable,
                                 Container resourcePool,
                                 Container targetPool,
                                 List<IMyAssembler> rawAssemblers,
@@ -263,7 +229,7 @@ namespace PartWatcher_alpha
                     _errorLogger.ReportSoftError("Null object supplied as infologger supplied in Assemblerfarm");
                 }
                 _qTable = qTable;
-                if (_qTable?.QuotaList?.Count < 1)
+                if (_qTable == null)
                 {
                     _errorLogger.ReportSoftError("Supplied null or empty Qoutatable");
                 }
@@ -301,7 +267,6 @@ namespace PartWatcher_alpha
                 ClearAssemblerJobs();   
                 EmptyAssemblerOutPuts();
                 ReturnAssemblerResourcesToBox();
-                UpdateQuotas();
                 RescheduleAssemblers();
                 ProgramInterrupt();
             }
@@ -314,39 +279,44 @@ namespace PartWatcher_alpha
 
             private void RescheduleAssemblers()
             {
+                var quotaList = _qTable.GetMissingItemQuota();
+
+                foreach (var entry in quotaList.GetReadonlyQuotaList())
+                {
+                    var missingMaterialList = new List<Item.ITEM>();
+                    
+                    //just using the first assembler, to test if there are enough materials for this item
+                    if (_assemblers[0].CanObtainResourcesForItem(entry.ItemType, missingMaterialList) == 0)
+                    {
+                        foreach (var missingMaterial in missingMaterialList)
+                        {
+                            _infoLogger.ReportWarning($"Missing {Item.ConvertItemTypeToString(missingMaterial)} for {Item.ConvertItemTypeToString(entry.ItemType)}");
+                        }
+
+                        entry.CantBeBuilt = false;
+                    }
+                }
+
+                //at this point we have only items in the quota table, that needs to be rebuild and can actually be build
                 foreach (var assembler in _assemblers)
                 {
-                    var currentHighestPrio = _qTable.GetHighestPrioQuota();
+                    var nextItem = quotaList.GetNextHighestPrioritizedEntry();
 
-                    if (currentHighestPrio == null){return;}
+                    var amountToBuild = Math.Min(MaxEnqueueLimit, nextItem.MissingAmount);
+                    nextItem.GlobalPriority -= amountToBuild;
 
-                    var itemAmountToProduce = assembler.CanObtainResourcesForItem(currentHighestPrio.Item);
-                    if (itemAmountToProduce == 0)
-                    {
-                        _qTable.MarkLastHighestPriorityItemAsUnbuildabel();
-                        _infoLogger.ReportInfo($"{Item.ConvertItemTypeToString(currentHighestPrio.Item)} unbuildable");
-                    }
-                    else
-                    {
-                        var amountToEnqueue = Math.Min(itemAmountToProduce, MaxEnqueueLimit);
-                        _infoLogger.ReportInfo($"{assembler.AssemblerName} -> {amountToEnqueue} {Item.ConvertItemTypeToString(currentHighestPrio.Item)}");
-                        assembler.ObtainResourcesForItem(currentHighestPrio.Item, amountToEnqueue);
-                        assembler.EnqueueItem(currentHighestPrio.Item, (int)amountToEnqueue);
-                    }
+                    assembler.ObtainResourcesForItem(nextItem.ItemType,amountToBuild);
+                    assembler.EnqueueItem(nextItem.ItemType, amountToBuild);
                 }
             }
 
-            private void UpdateQuotas()
+            private QuotaEntry ExtractNextItemToBuild(List<QuotaEntry> quotaEntries)
             {
-                foreach (var quotaEntry in _qTable.QuotaList)
-                {
-                    UpdateSingleQuota(quotaEntry);
-                }
-            }
-
-            private void UpdateSingleQuota(QuotaEntry entry)
-            {
-                entry.CurrentCount = _targetPool.GetItemCount(entry.Item);
+                quotaEntries.Sort((e1,e2)=>e2.GlobalPriority.CompareTo(e1.GlobalPriority));
+                //remove all items that have all missing items already enqueued
+                quotaEntries.RemoveAll(e => e.MissingAmount == 0);
+                quotaEntries[0].GlobalPriority /= 2;
+                return quotaEntries[0];
             }
 
             private void ReturnAssemblerResourcesToBox()
@@ -1152,7 +1122,7 @@ namespace PartWatcher_alpha
                 return true;
             }
 
-            public double CanObtainResourcesForItem(Item.ITEM item)
+            public double CanObtainResourcesForItem(Item.ITEM item,List<Item.ITEM> missingMaterials = null)
             {
                 var materialList = ItemMaterial.MaterialMapping[item];
 
