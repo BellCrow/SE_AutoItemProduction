@@ -28,7 +28,7 @@ namespace PartWatcher_alpha
         #region copy
         private static System.Action<string> echodel;
 
-        public static void Main(string[] args){}
+        public static void Main(string[] args) { }
 
         //called every millisecond or so
         public void Main()
@@ -50,13 +50,11 @@ namespace PartWatcher_alpha
             var interrupt = GridTerminalSystem.GetBlockWithName(interruptName) as IMyTimerBlock;
 
             //quotas to fullfill can be added here
-            var quotaList = new QuotaTableFactory(cargoTo,errorLogger);
-            quotaList.AddQuotaForItem(Item.ITEM.STEEL_PLATE, 45000);
-            quotaList.AddQuotaForItem(Item.ITEM.CONSTRUCTION_COMPONENT, 15000);
-            quotaList.AddQuotaForItem(Item.ITEM.COMPUTER_COMPONENTS, 2500);
-            quotaList.AddQuotaForItem(Item.ITEM.DISPLAY, 500);
-            quotaList.AddQuotaForItem(Item.ITEM.METALGRID, 500);
-            quotaList.AddQuotaForItem(Item.ITEM.INTERIOR_PLATE, 20000);
+            var quotaList = new QuotaTableFactory(cargoTo, errorLogger);
+            quotaList.AddQuotaForItem(Item.ITEM.STEEL_PLATE, 50000);
+            quotaList.AddQuotaForItem(Item.ITEM.CONSTRUCTION_COMPONENT, 25000);
+            quotaList.AddQuotaForItem(Item.ITEM.INTERIOR_PLATE, 12000);
+
             quotaList.AddQuotaForItem(Item.ITEM.SMALL_STEEL_TUBE, 30000);
             quotaList.AddQuotaForItem(Item.ITEM.LARGE_STEEL_TUBE, 5000);
             quotaList.AddQuotaForItem(Item.ITEM.BULLETPROOF_GLASS, 1500);
@@ -71,16 +69,21 @@ namespace PartWatcher_alpha
             quotaList.AddQuotaForItem(Item.ITEM.MOTOR, 5000);
             quotaList.AddQuotaForItem(Item.ITEM.GIRDER, 250);
             quotaList.AddQuotaForItem(Item.ITEM.SUPER_CONDUCTOR_COMPONENT, 2000);
+            quotaList.AddQuotaForItem(Item.ITEM.COMPUTER_COMPONENTS, 1000);
+            quotaList.AddQuotaForItem(Item.ITEM.DISPLAY, 500);
+            quotaList.AddQuotaForItem(Item.ITEM.METALGRID, 500);
 
             var rawAssembler = new List<IMyAssembler>();
             GridTerminalSystem.GetBlocksOfType(rawAssembler,
                 myAssembler => myAssembler.CustomName.StartsWith(assemblerPrefix));
 
             var assemblerFarm = new AssemblerFarm(quotaList, cargoFrom, cargoTo, rawAssembler, interrupt, infoLogger, errorLogger);
+
             assemblerFarm.Reschedule();
+            
         }
 
-        public Program(){}
+        public Program() { }
 
         #region quota data
 
@@ -90,7 +93,7 @@ namespace PartWatcher_alpha
             private Dictionary<Item.ITEM, int> _itemQuotaTable;
             private Reporter _errorLogger;
 
-            public QuotaTableFactory(Container quotaTarget,Reporter errorLogger = null)
+            public QuotaTableFactory(Container quotaTarget, Reporter errorLogger = null)
             {
                 _toSurveyForQuotas = quotaTarget;
                 _itemQuotaTable = new Dictionary<Item.ITEM, int>();
@@ -104,7 +107,7 @@ namespace PartWatcher_alpha
                     _errorLogger?.ReportSoftError("Tried to supply same item type twice for quotatable");
                     return false;
                 }
-                _itemQuotaTable.Add(itemType,amount);
+                _itemQuotaTable.Add(itemType, amount);
                 return true;
             }
 
@@ -118,18 +121,18 @@ namespace PartWatcher_alpha
                 {
                     var quotaAmount = itemTableEntry.Value;
                     var existingAmount = _toSurveyForQuotas.GetItemCount(itemTableEntry.Key);
-                    
+
                     //skip itemtypes, that have theire quota already fullfilled
-                    if(existingAmount >= quotaAmount)
+                    if (existingAmount >= quotaAmount)
                         continue;
                     //save the percent values for calculation of the global priorities
                     QuotaList.Add(quotaAmount);
-                    Amountlist.Add(existingAmount);
+                    Amountlist.Add((int)existingAmount);
 
                     var entry = new QuotaEntry
                     {
                         ItemType = itemTableEntry.Key,
-                        MissingAmount = quotaAmount - existingAmount
+                        MissingAmount = (int)(quotaAmount - existingAmount)
                     };
 
                     retList.Add(entry);
@@ -158,11 +161,11 @@ namespace PartWatcher_alpha
         public class QuotaTable
         {
             private List<QuotaEntry> _sessionQuotas;
-            
+
             public QuotaTable(List<QuotaEntry> quotas)
             {
                 _sessionQuotas = quotas;
-                if (_sessionQuotas== null)
+                if (_sessionQuotas == null)
                 {
                     Util.FatalError("Supplied null quotalist");
                 }
@@ -170,12 +173,13 @@ namespace PartWatcher_alpha
 
             public QuotaEntry GetNextHighestPrioritizedEntry()
             {
+                _sessionQuotas.RemoveAll(e => e.CantBeBuilt || e.MissingAmount <= 0);
                 if (_sessionQuotas.Count == 0)
                 {
                     return null;
                 }
-                _sessionQuotas.RemoveAll(e => e.CantBeBuilt || e.MissingAmount <= 0);
-                _sessionQuotas.Sort((e1,e2)=>e2.GlobalPriority.CompareTo(e1.GlobalPriority));
+
+                _sessionQuotas.Sort((e1, e2) => e2.GlobalPriority.CompareTo(e1.GlobalPriority));
                 _sessionQuotas[0].GlobalPriority /= 2;
                 return _sessionQuotas[0];
             }
@@ -187,12 +191,19 @@ namespace PartWatcher_alpha
                 return _sessionQuotas;
             }
         }
+
         public class QuotaEntry
         {
             public Item.ITEM ItemType;
             public int MissingAmount;
             public double GlobalPriority;
+            public double BuiltAmount;
             public bool CantBeBuilt;
+
+            public override string ToString()
+            {
+                return $"{Item.ConvertItemTypeToString(ItemType)} CBB:{CantBeBuilt}";
+            }
         }
 
         #endregion
@@ -257,93 +268,74 @@ namespace PartWatcher_alpha
                 _assemblers = new List<Assembler>();
                 foreach (var assembler in rawAssemblers)
                 {
-                    var managedAssembler = new Assembler(assembler, _resourcePool) { Reporter = _errorLogger };
-                    _assemblers.Add(managedAssembler);
+                    _assemblers.Add(new Assembler(assembler, _resourcePool, targetPool) { Reporter = _errorLogger });
                 }
             }
 
             public void Reschedule()
             {
-                ClearAssemblerJobs();   
-                EmptyAssemblerOutPuts();
-                ReturnAssemblerResourcesToBox();
-                RescheduleAssemblers();
+                ResetAssemblers();
+                ScheduleAssemblers();
                 ProgramInterrupt();
+            }
+
+            private void ScheduleAssemblers()
+            {
+                var quotaSession = _qTable.GetMissingItemQuota();
+                //if no items need to be built just return
+                if (quotaSession.Count == 0)
+                    return;
+
+                foreach (var assembler in _assemblers)
+                {
+                    var highest = quotaSession.GetNextHighestPrioritizedEntry();
+                    if (highest == null)
+                    {
+                        return;
+                    }
+                    var missingMaterials = new List<Item.ITEM>();
+                    var toProduce = assembler.GetProducableItemAmount(highest.ItemType, missingMaterials);
+                    while (toProduce == 0)
+                    {
+                        foreach (var missingMat in missingMaterials)
+                        {
+                            _errorLogger.ReportWarning($"Missing {Item.ConvertItemTypeToString(missingMat)} for {Item.ConvertItemTypeToString(highest.ItemType)}");
+                        }
+                        missingMaterials.Clear();
+                        highest.CantBeBuilt = true;
+                        highest = quotaSession.GetNextHighestPrioritizedEntry();
+                        if (highest == null)
+                        {
+                            return;
+                        }
+                        toProduce = assembler.GetProducableItemAmount(highest.ItemType, missingMaterials);
+                    }
+
+                    toProduce = Math.Min(toProduce, MaxEnqueueLimit);
+                    toProduce = Math.Min(toProduce, highest.MissingAmount);
+                    _infoLogger.ReportInfo($"{assembler.AssemblerName} -> {toProduce} {Item.ConvertItemTypeToString(highest.ItemType)}");
+                    if (!assembler.GetMaterialsForItems(highest.ItemType, toProduce))
+                    { _errorLogger.ReportSoftError($"Error in material aquisition for \n{toProduce} {Item.ConvertItemTypeToString(highest.ItemType)}"); }
+                    assembler.EnqueueItem(highest.ItemType, toProduce);
+                    highest.MissingAmount -= toProduce;
+
+                }
+            }
+
+            private void ResetAssemblers()
+            {
+                foreach (var assembler in _assemblers)
+                {
+                    assembler.ClearJobQueue();
+                    assembler.ReturnResourcesToResourceBox();
+                    assembler.MoveProducedItemsToContainer();
+                }
             }
 
             private void ProgramInterrupt()
             {
                 _interruptController.TriggerDelay = rescheduleDelay;
                 _interruptController.StartCountdown();
-            }
-
-            private void RescheduleAssemblers()
-            {
-                var quotaList = _qTable.GetMissingItemQuota();
-
-                foreach (var entry in quotaList.GetReadonlyQuotaList())
-                {
-                    var missingMaterialList = new List<Item.ITEM>();
-                    
-                    //just using the first assembler, to test if there are enough materials for this item
-                    if (_assemblers[0].CanObtainResourcesForItem(entry.ItemType, missingMaterialList) == 0)
-                    {
-                        foreach (var missingMaterial in missingMaterialList)
-                        {
-                            _infoLogger.ReportWarning($"Missing {Item.ConvertItemTypeToString(missingMaterial)} for {Item.ConvertItemTypeToString(entry.ItemType)}");
-                        }
-
-                        entry.CantBeBuilt = false;
-                    }
-                }
-
-                //at this point we have only items in the quota table, that needs to be rebuild and can actually be build
-                foreach (var assembler in _assemblers)
-                {
-                    var nextItem = quotaList.GetNextHighestPrioritizedEntry();
-
-                    var amountToBuild = Math.Min(MaxEnqueueLimit, nextItem.MissingAmount);
-                    nextItem.GlobalPriority -= amountToBuild;
-
-                    assembler.ObtainResourcesForItem(nextItem.ItemType,amountToBuild);
-                    assembler.EnqueueItem(nextItem.ItemType, amountToBuild);
-                }
-            }
-
-            private QuotaEntry ExtractNextItemToBuild(List<QuotaEntry> quotaEntries)
-            {
-                quotaEntries.Sort((e1,e2)=>e2.GlobalPriority.CompareTo(e1.GlobalPriority));
-                //remove all items that have all missing items already enqueued
-                quotaEntries.RemoveAll(e => e.MissingAmount == 0);
-                quotaEntries[0].GlobalPriority /= 2;
-                return quotaEntries[0];
-            }
-
-            private void ReturnAssemblerResourcesToBox()
-            {
-                foreach (var assembler in _assemblers)
-                {
-                    assembler.ReturnResourcesToResourceBox();
-                }
-            }
-
-            public void EmptyAssemblerOutPuts()
-            {
-                foreach (var assembler in _assemblers)
-                {
-                    if (!assembler.EmptyOutputToInventory(_targetPool.RawContainer.GetInventory(0)))
-                    {
-                        _errorLogger.ReportSoftError($"Error emptieing output of Assembler {assembler.AssemblerName}");
-                    }
-                }
-            }
-
-            public void ClearAssemblerJobs()
-            {
-                foreach (var assembler in _assemblers)
-                {
-                    assembler.ClearJobQueue();
-                }
             }
         }
 
@@ -356,7 +348,7 @@ namespace PartWatcher_alpha
 
             public IMyCargoContainer RawContainer { get; }
 
-            public Container(){}
+            public Container() { }
 
             public Container(IMyCargoContainer cargoContainer)
             {
@@ -393,7 +385,7 @@ namespace PartWatcher_alpha
                 return ret;
             }
 
-            public virtual int GetItemCount(Item.ITEM searcheditem)
+            public virtual double GetItemCount(Item.ITEM searcheditem)
             {
                 var items = GetItems();
                 return Util.CountItemInInventory(items, searcheditem);
@@ -912,8 +904,8 @@ namespace PartWatcher_alpha
 
                             materialMapping.Add(Item.ITEM.GIRDER, new List<ItemCostEntry> { new ItemCostEntry(Item.ITEM.IRON_INGOT, 2.34) });
 
-                            materialMapping.Add(Item.ITEM.SUPER_CONDUCTOR_COMPONENT, new List<ItemCostEntry>{new ItemCostEntry(Item.ITEM.IRON_INGOT, 1.68),
-                                                                                          new ItemCostEntry(Item.ITEM.GOLD_INGOT, 3.01)});
+                            materialMapping.Add(Item.ITEM.SUPER_CONDUCTOR_COMPONENT, new List<ItemCostEntry>{new ItemCostEntry(Item.ITEM.IRON_INGOT, 3.34),
+                                                                                          new ItemCostEntry(Item.ITEM.GOLD_INGOT, 0.68)});
                         }
 
                         return materialMapping;
@@ -934,6 +926,11 @@ namespace PartWatcher_alpha
 
                 public Item.ITEM material { get; }
                 public double amount { get; }
+
+                public override string ToString()
+                {
+                    return Item.ConvertItemTypeToString(material) + ":" + amount;
+                }
             }
 
             #region assembler blueprint strings
@@ -989,29 +986,23 @@ namespace PartWatcher_alpha
 
             public Reporter Reporter;
 
-            private readonly Container resourcePool;
+            private readonly Container _resourcePool;
 
-            public Assembler(IMyAssembler rawAssembler, Container resourcePool)
+            private readonly Container _outPutContainer;
+
+            public Assembler(IMyAssembler rawAssembler, Container resourcePool, Container outPutContainer)
             {
                 RawAssembler = rawAssembler;
-                this.resourcePool = resourcePool;
+                this._resourcePool = resourcePool;
 
-                if (resourcePool == null)
-                {
-                    Util.FatalError("No resourceBox supplied on assembler creation");
-                }
+                //outputcontainer can be null
+                _outPutContainer = outPutContainer;
 
-                if (RawAssembler == null)
-                { Util.FatalError("No Assembler supplied"); }
+                if (resourcePool == null) { Util.FatalError("No resourceBox supplied on assembler creation"); }
+
+                if (RawAssembler == null) { Util.FatalError("No Assembler supplied"); }
 
                 RawAssembler.UseConveyorSystem = false;
-            }
-
-            public bool MaterialMissing()
-            {
-                return !RawAssembler.IsProducing &&
-                       !RawAssembler.IsQueueEmpty &&
-                        RawAssembler.IsWorking;
             }
 
             public void DeleteCurrentJob()
@@ -1029,16 +1020,34 @@ namespace PartWatcher_alpha
                 { DeleteCurrentJob(); }
             }
 
-            public void MoveCurrentlyProducedItemToEndOfQueue()
+            public int GetProducableItemAmount(Item.ITEM toProduce, List<Item.ITEM> missingMaterials)
             {
-                if (RawAssembler.IsQueueEmpty)
-                    return;
-                var currentlyProducedItems = new List<MyProductionItem>();
+                var materialList = ItemMaterial.MaterialMapping[toProduce];
+                var produceable = double.MaxValue;
+                foreach (var material in materialList)
+                {
+                    var singleMat = (int)(_resourcePool.GetItemCount(material.material) / material.amount);
+                    if (singleMat == 0)
+                    {
+                        missingMaterials?.Add(material.material);
+                    }
+                    produceable = Math.Min(produceable, singleMat);
+                }
+                return (int)produceable;
+            }
 
-                RawAssembler.GetQueue(currentlyProducedItems);
-                var currentlyProducedItem = currentlyProducedItems[0];
-                RawAssembler.RemoveQueueItem(0, currentlyProducedItems[0].Amount);
-                RawAssembler.AddQueueItem(currentlyProducedItem.BlueprintId, currentlyProducedItem.Amount);
+            public bool GetMaterialsForItems(Item.ITEM toProduce, int amount)
+            {
+                var materialList = ItemMaterial.MaterialMapping[toProduce];
+
+                foreach (var mat in materialList)
+                {
+                    if (!_resourcePool.MoveResourcesTo(mat.material, mat.amount * amount, RawAssembler.GetInventory(0)))
+                    {
+                        return false;
+                    }
+                }
+                return true;
             }
 
             public bool EnqueueItem(Item.ITEM toBuild, long amount)
@@ -1122,84 +1131,10 @@ namespace PartWatcher_alpha
                 return true;
             }
 
-            public double CanObtainResourcesForItem(Item.ITEM item,List<Item.ITEM> missingMaterials = null)
-            {
-                var materialList = ItemMaterial.MaterialMapping[item];
-
-                int lowestCount = int.MaxValue;
-
-                foreach (var material in materialList)
-                {
-
-                    var canProduceSoManyItemsWithResource =
-                        resourcePool.GetItemCount(material.material) / material.amount;
-                    lowestCount = Math.Min((int)canProduceSoManyItemsWithResource, lowestCount);
-                }
-                return lowestCount;
-            }
-
-            public AquisitionResult ObtainResourcesForItem(Item.ITEM toBuild, double amount)
-            {
-                #region itemMapping values
-                
-                #endregion
-
-                if (amount < 1)
-                {
-                    Reporter?.ReportSoftError("amount error in resource aquisition");
-                    return new AquisitionResult() { AmountError = true };
-                }
-                var materialList = ItemMaterial.MaterialMapping[toBuild];
-
-                foreach (var material in materialList)
-                {
-                    if (!CanObtainResource(material.material, material.amount * amount))
-                    {
-
-                        Reporter?.ReportSoftError($"Missing {Item.ConvertItemTypeToString(material.material)} for {Item.ConvertItemTypeToString(toBuild)}");
-                        var ret = new AquisitionResult();
-                        ret.MissingMaterialStrings.Add(Item.ConvertItemTypeToString(material.material));
-                        return ret;
-                    }
-                }
-
-                foreach (var material in materialList)
-                {
-                    ObtainResource(material.material, material.amount * amount);
-                }
-
-                var ret2 = new AquisitionResult();
-                ret2.MissingMaterialStrings.Add("PLEASE IMPLEMENT THIS");
-                return ret2;
-            }
-
-            /// <summary>
-            /// Will issue the given resourcebox for the determined material and the given amount.
-            /// </summary>
-            /// <param name="resourceType">the resource type to aquire. Eg Iron_Ingot or Gold_ingot</param>
-            /// <param name="amount">the amount of the given resource tpye to transfer</param>
-            /// <param name="forceAquisition"> NOT IMPLEMENTED ATM. I PLANNED THOUGH.if this is true, and the amount of available ingot in the box is less than the desired amount,
-            /// then the available amount will be transfered</param>
-            /// <returns></returns>
-            private bool ObtainResource(Item.ITEM resourceType, double amount)
-            {
-                if (resourcePool != null)
-                {
-                    resourcePool.MergeItemStacks();
-                    return resourcePool.MoveResourcesTo(resourceType, amount, GetRawInputInventory());
-                }
-                return false;
-            }
-
-            private bool CanObtainResource(Item.ITEM resourceType, double amount)
-            {
-                return resourcePool.GetItemCount(resourceType) >= amount;
-            }
-
             public bool ReturnResourcesToResourceBox()
             {
                 //TODO:this is duplicated code, thats used all over the place
-                if (resourcePool.RawContainer.GetInventory(0).IsFull)
+                if (_resourcePool.RawContainer.GetInventory(0).IsFull)
                 {
                     Reporter.ReportSoftError("Resource box ist full cant move resources there");
                     return false;
@@ -1208,7 +1143,7 @@ namespace PartWatcher_alpha
                 var outPutInv = GetRawInputInventory();
                 while (outPutInv.IsItemAt(0))
                 {
-                    if (!outPutInv.TransferItemTo(resourcePool.RawContainer.GetInventory(0), 0))
+                    if (!outPutInv.TransferItemTo(_resourcePool.RawContainer.GetInventory(0), 0))
                     {
                         Reporter.ReportSoftError("At Least one move into the resource box did not work");
                         return false;
@@ -1216,40 +1151,6 @@ namespace PartWatcher_alpha
                 }
 
                 return true;
-            }
-
-            /// <summary>
-            /// Will take the given itemType and will enqueue as much as is need to satisfy the given qouta.
-            /// That means, if a qouta of 40 is given and there are already 20 items of this kind enqueued.
-            /// the method will issu only an additional 20 items
-            /// </summary>
-            /// <param name="toBuild">The itemType to build</param>
-            /// <param name="quotaAmount">The quota needed to be satisfied</param>
-            public void EnqueueToSatisfyQuota(Item.ITEM toBuild, long quotaAmount)
-            {
-                EnqueueItem(toBuild, quotaAmount - GetEnqueuedItemsOfType(toBuild));
-            }
-
-            /// <summary>
-            /// Will search the Asemblers queue for the given itemType and returns the 
-            /// </summary>
-            /// <param name="itemType"></param>
-            /// <returns></returns>
-            public long GetEnqueuedItemsOfType(Item.ITEM itemType)
-            {
-                var queuedItems = new List<MyProductionItem>();
-                RawAssembler.GetQueue(queuedItems);
-                long retAmount = 0;
-
-                foreach (var iterItem in queuedItems)
-                {
-                    if (Item.ConvertSubTypeAndTypeIdToItem(iterItem.BlueprintId.SubtypeName, iterItem.BlueprintId.SubtypeId.ToString()) == itemType)
-                    {
-                        retAmount += iterItem.Amount.ToIntSafe();
-                    }
-                }
-                echodel.Invoke($"returning amount of {retAmount}");
-                return retAmount;
             }
 
             private IMyInventory GetRawInventory(bool getRawOutPutInventory)
@@ -1288,22 +1189,13 @@ namespace PartWatcher_alpha
                 return GetInventory(false);
             }
 
-            public bool EmptyOutputToInventory(IMyInventory targetInventory)
+            public void MoveProducedItemsToContainer()
             {
-                if (targetInventory == null
-                    || targetInventory.IsFull)
-                { return false; }
-
                 var outPutInv = GetRawOutputInventory();
                 while (outPutInv.IsItemAt(0))
                 {
-                    if (!outPutInv.TransferItemTo(targetInventory, 0))
-                    {
-                        return false;
-                    }
+                    outPutInv.TransferItemTo(_outPutContainer.RawContainer.GetInventory(0), 0);
                 }
-
-                return true;
             }
         }
 
@@ -1552,7 +1444,6 @@ namespace PartWatcher_alpha
                     panel.FontSize = FontSize;
                     panel.WritePublicText(string.Empty);
                 }
-                echodel.Invoke("Mark");
             }
 
             private string GetPanelContent(int panelIndex)
@@ -1568,13 +1459,13 @@ namespace PartWatcher_alpha
                         ret.Append(_messageBuffer[iterator] + "\n");
                         iterator = (iterator + 1) % CompleteLineCount;
                     }
-                    return ret.ToString(); 
+                    return ret.ToString();
                 }
             }
 
             private void PrintRollingLog()
             {
-                for (int i = 0 ; i < _rawTextPanel.Count; i++)
+                for (int i = 0; i < _rawTextPanel.Count; i++)
                 {
                     _rawTextPanel[i].WritePublicText(GetPanelContent(i));
                 }
@@ -1586,7 +1477,7 @@ namespace PartWatcher_alpha
 
                 _messageBuffer[_currentWriteIndex] = message;
                 _currentWriteIndex = (_currentWriteIndex + 1) % CompleteLineCount;
-                if(moveRead){ _currentMessageStartIndex = (_currentMessageStartIndex + 1) % CompleteLineCount;}
+                if (moveRead) { _currentMessageStartIndex = (_currentMessageStartIndex + 1) % CompleteLineCount; }
                 _firstOverWrite = false;
             }
 
@@ -1636,7 +1527,6 @@ namespace PartWatcher_alpha
             }
         }
         #endregion
-
 
         #endregion
     }

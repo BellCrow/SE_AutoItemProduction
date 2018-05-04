@@ -144,4 +144,48 @@ namespace PartWatcher_alpha.SePartWatcher
             
         }
     }
+
+    class AssemblerTest
+    {
+        [Test]
+        public void GetProduceableitemAmount()
+        {
+            var containerMoq = new Mock<p.Container>();
+            var rawAssemblerMoq = new Mock<IMyAssembler>();
+
+            containerMoq.Setup(container => container.GetItemCount(p.Item.ITEM.IRON_INGOT)).Returns(50);
+            containerMoq.Setup(container => container.GetItemCount(p.Item.ITEM.SILICON_WAFER)).Returns(10);
+
+            var assembler = new p.Assembler(rawAssemblerMoq.Object,containerMoq.Object,null);
+            var missingMaterial = new List<p.Item.ITEM>();
+
+            Assert.AreEqual(7,assembler.GetProducableItemAmount(p.Item.ITEM.STEEL_PLATE,missingMaterial));
+            Assert.AreEqual(0,missingMaterial.Count);
+            missingMaterial.Clear();
+            Assert.AreEqual(42,assembler.GetProducableItemAmount(p.Item.ITEM.INTERIOR_PLATE, missingMaterial));
+            Assert.AreEqual(0, missingMaterial.Count);
+            missingMaterial.Clear();
+            Assert.AreEqual(5,assembler.GetProducableItemAmount(p.Item.ITEM.DISPLAY, missingMaterial));
+            Assert.AreEqual(0, missingMaterial.Count);
+            missingMaterial.Clear();
+        }
+
+        [Test]
+        public void GetProduceAbleItemCountIfMaterialIsMissing()
+        {
+            var containerMoq = new Mock<p.Container>();
+            var rawAssemblerMoq = new Mock<IMyAssembler>();
+
+            containerMoq.Setup(container => container.GetItemCount(p.Item.ITEM.IRON_INGOT)).Returns(50);
+            containerMoq.Setup(container => container.GetItemCount(p.Item.ITEM.SILICON_WAFER)).Returns(10);
+
+            var assembler = new p.Assembler(rawAssemblerMoq.Object, containerMoq.Object, null);
+            var missingMaterial = new List<p.Item.ITEM>();
+
+            Assert.AreEqual(0,assembler.GetProducableItemAmount(p.Item.ITEM.REACTOR_COMPONENT,missingMaterial));
+
+            Assert.Contains(p.Item.ITEM.GRAVEL,missingMaterial);
+            Assert.Contains(p.Item.ITEM.SILVER_INGOT,missingMaterial);
+        }
+    }
 }
